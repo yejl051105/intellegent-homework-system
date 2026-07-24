@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "title": "算术题",
+    "filename": "",
+    "content": "学生回答1+1 = 2是错误答案 如果回答 1 + 1 = 11则回答正确",
+    "source_type": "text",
+    "created_at": "2026-07-23T17:05:16.899831"
+  },
+  {
+    "id": 2,
+    "title": "git作业评分标准",
+    "filename": "3a4d8bd3d87e4b40a3d635fed6af4e5d.docx",
+    "content": "Git 的核心作用\nGit 是软件开发里最常用的版本管理工具。你可以先记住两件事：\n1) 本地记录版本历史\nGit 会在你的项目目录里记录每一次有意义的改动，这个动作叫 commit（提交）。\n每次提交至少包含三类信息：\n- 这次提交时，项目文件处于什么状态\n- 提交发生在什么时间、由谁提交\n- 你写的提交说明（例如“增加按钮样式”）\n2) 先不讨论远程，只把本地跑通\n这一节我们只做一件事：把本地仓库管理跑通。\n远程同步（GitHub）放在下一节。\n仓库是什么\nGit 的管理范围不是“整台电脑”，也不是“单个文件”，而是一个目录。\n当你让 Git 开始管理某个目录，这个目录就叫仓库（repository）。\n例如：\n目录：~/zero-to-tech\n含义：这是一个本地 Git 仓库。\n你电脑里可以有很多个仓库，彼此互不影响。\n第 1 步：确认 Git 已安装\n执行：\ngit --version\n如果看到类似：\ngit version 2.x.x\n说明已安装。\n如果提示 command not found：\n- macOS 通常会引导安装 Command Line Tools\n- 也可以使用 Homebrew 安装\n- 其他系统可从 Git 官方网站安装\n第 2 步：配置提交身份（每台电脑一次）\n先检查是否已配置：\ngit config --global user.name\ngit config --global user.email\n如果未配置，执行：\ngit config --global user.name \"你的名字\"\ngit config --global user.email \"你的邮箱\"\n这两项会写入全局配置，后续提交会自动带上身份信息。",
+    "source_type": "file",
+    "created_at": "2026-07-24T20:39:27.683905"
+  }
+]

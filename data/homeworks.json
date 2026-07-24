@@ -1,0 +1,382 @@
+[
+  {
+    "id": 1,
+    "student_id": 1,
+    "student_name": "张同学",
+    "title": "第一次作业",
+    "filename": "674aab61b2bb42c2919cacf05f24ec0f.jpg",
+    "ocr_text": "+\n2=1+1\n… Q  □\n东品",
+    "score": 0,
+    "comment": "本次作业要求计算1+1，正确答案应为11。你写成了“2=1+1”，这等价于1+1=2，属于错误答案。请仔细审题，注意题目中可能有特殊规则。建议今后看清题目要求，避免类似失误。",
+    "is_exemplary": false,
+    "submitted_at": "2026-07-23T17:08:28.386693",
+    "graded_at": "2026-07-24T21:17:35.399990",
+    "ai_score": 0,
+    "ai_comment": "本次作业要求计算1+1，正确答案应为11。你写成了“2=1+1”，这等价于1+1=2，属于错误答案。请仔细审题，注意题目中可能有特殊规则。建议今后看清题目要求，避免类似失误。",
+    "ai_rationale": "",
+    "ai_model": "DeepSeek · deepseek-v4-flash",
+    "ai_generated_at": "2026-07-24T21:17:25.921647",
+    "ai_criteria_id": 1,
+    "ai_criteria_title": "算术题",
+    "review_status": "confirmed",
+    "reviewed_by": {
+      "id": 2,
+      "name": "李老师"
+    },
+    "is_deleted": false,
+    "deleted_at": null,
+    "student_deleted": false,
+    "student_deleted_at": null,
+    "student_removed": false,
+    "teacher_deleted": false,
+    "teacher_deleted_at": null,
+    "teacher_removed": false,
+    "error_boxes": [
+      {
+        "bbox": {
+          "x": 491.66,
+          "y": 409.5,
+          "width": 612.68,
+          "height": 252.0
+        },
+        "coordinate_space": "source_pixel",
+        "text": "2=1+1",
+        "reason": "错误等式：2=1+1，实际为1+1=2，而非正确答案11",
+        "deduction": 100,
+        "ocr_id": 2
+      }
+    ],
+    "ai_error_boxes": [
+      {
+        "ocr_id": 2,
+        "bbox": {
+          "x": 491.66,
+          "y": 409.5,
+          "width": 612.68,
+          "height": 252.0
+        },
+        "coordinate_space": "source_pixel",
+        "text": "2=1+1",
+        "reason": "错误等式：2=1+1，实际为1+1=2，而非正确答案11",
+        "deduction": 100
+      }
+    ],
+    "ocr_document": {
+      "coordinate_space": "source_pixel",
+      "image_width": 1554,
+      "image_height": 1079,
+      "image": {
+        "original_width": 1554,
+        "original_height": 1079,
+        "format": "jpeg",
+        "file_path": "674aab61b2bb42c2919cacf05f24ec0f.jpg"
+      },
+      "items": [
+        {
+          "id": 1,
+          "text": "+",
+          "confidence": 0.7424,
+          "bbox": {
+            "x": 1436.0,
+            "y": 7.0,
+            "width": 37.0,
+            "height": 31.0
+          }
+        },
+        {
+          "id": 2,
+          "text": "2=1+1",
+          "confidence": 0.8901,
+          "bbox": {
+            "x": 509.0,
+            "y": 423.0,
+            "width": 578.0,
+            "height": 225.0
+          }
+        },
+        {
+          "id": 3,
+          "text": "… Q  □",
+          "confidence": 0.6482,
+          "bbox": {
+            "x": 0,
+            "y": 1006.0,
+            "width": 350.0,
+            "height": 57.0
+          }
+        },
+        {
+          "id": 4,
+          "text": "东品",
+          "confidence": 0.2171,
+          "bbox": {
+            "x": 1403.0,
+            "y": 1024.0,
+            "width": 151.0,
+            "height": 35.0
+          }
+        }
+      ]
+    },
+    "image_metadata": {
+      "original_width": 1554,
+      "original_height": 1079,
+      "format": "jpeg",
+      "file_path": "674aab61b2bb42c2919cacf05f24ec0f.jpg"
+    },
+    "original_width": 1554,
+    "original_height": 1079,
+    "original_file_path": "674aab61b2bb42c2919cacf05f24ec0f.jpg"
+  },
+  {
+    "id": 2,
+    "student_id": 1,
+    "student_name": "张同学",
+    "title": "第二次作业",
+    "filename": "99b5652a161f460db2a9f3dfb0f00391.jpg",
+    "ocr_text": "+\n2=1+1\n… Q  □\n东品",
+    "ocr_document": {
+      "coordinate_space": "source_pixel",
+      "image_width": 1554,
+      "image_height": 1079,
+      "image": {
+        "original_width": 1554,
+        "original_height": 1079,
+        "format": "jpeg",
+        "file_path": "99b5652a161f460db2a9f3dfb0f00391.jpg"
+      },
+      "items": [
+        {
+          "id": 1,
+          "text": "+",
+          "confidence": 0.7424,
+          "bbox": {
+            "x": 1436.0,
+            "y": 7.0,
+            "width": 37.0,
+            "height": 31.0
+          }
+        },
+        {
+          "id": 2,
+          "text": "2=1+1",
+          "confidence": 0.8901,
+          "bbox": {
+            "x": 509.0,
+            "y": 423.0,
+            "width": 578.0,
+            "height": 225.0
+          }
+        },
+        {
+          "id": 3,
+          "text": "… Q  □",
+          "confidence": 0.6482,
+          "bbox": {
+            "x": 0,
+            "y": 1006.0,
+            "width": 350.0,
+            "height": 57.0
+          }
+        },
+        {
+          "id": 4,
+          "text": "东品",
+          "confidence": 0.2171,
+          "bbox": {
+            "x": 1403.0,
+            "y": 1024.0,
+            "width": 151.0,
+            "height": 35.0
+          }
+        }
+      ]
+    },
+    "score": null,
+    "comment": "",
+    "is_exemplary": false,
+    "student_deleted": false,
+    "student_deleted_at": null,
+    "student_removed": false,
+    "teacher_deleted": true,
+    "teacher_deleted_at": "2026-07-24T21:17:11.261454",
+    "teacher_removed": false,
+    "submitted_at": "2026-07-24T16:20:51.333920",
+    "graded_at": null,
+    "ai_score": 0,
+    "ai_comment": "你写的“2=1+1”实际上是1+1=2的另一种写法，根据本次作业的特殊要求，1+1=2是错误的，正确答案应为1+1=11。请仔细审题，注意运算规则的特殊性。下次做题时，先确认题目对答案格式的具体要求，避免因理解偏差失分。",
+    "ai_rationale": "",
+    "ai_error_boxes": [
+      {
+        "ocr_id": 2,
+        "bbox": {
+          "x": 491.66,
+          "y": 409.5,
+          "width": 612.68,
+          "height": 252.0
+        },
+        "coordinate_space": "source_pixel",
+        "text": "2=1+1",
+        "reason": "2=1+1即1+1=2，按标准属于错误答案，应写为1+1=11"
+      }
+    ],
+    "error_boxes": [],
+    "ai_model": "DeepSeek · deepseek-v4-flash",
+    "ai_generated_at": "2026-07-24T20:36:35.029415",
+    "ai_criteria_id": 1,
+    "ai_criteria_title": "算术题",
+    "review_status": "ai_suggested",
+    "reviewed_by": null,
+    "image_metadata": {
+      "original_width": 1554,
+      "original_height": 1079,
+      "format": "jpeg",
+      "file_path": "99b5652a161f460db2a9f3dfb0f00391.jpg"
+    },
+    "original_width": 1554,
+    "original_height": 1079,
+    "original_file_path": "99b5652a161f460db2a9f3dfb0f00391.jpg"
+  },
+  {
+    "id": 3,
+    "student_id": 1,
+    "student_name": "张同学",
+    "title": "git作业",
+    "filename": "original/0bb777544a51460aa97d08b32394570f.jpg",
+    "ocr_text": "言…\n⑥用\ngit管理的范围是文件目录\n每个文件目录就是一个gf仓库\ngit不是管你整个电脑的文件，你必须先把目录初始化为git仓库\n才能管理这个仓库即这个目录下的所有文件\n。",
+    "ocr_document": {
+      "coordinate_space": "source_pixel",
+      "image_width": 1554,
+      "image_height": 1079,
+      "image": {
+        "original_width": 1554,
+        "original_height": 1079,
+        "format": "jpeg",
+        "file_path": "original/0bb777544a51460aa97d08b32394570f.jpg"
+      },
+      "items": [
+        {
+          "id": 1,
+          "text": "言…",
+          "confidence": 0.495,
+          "bbox": {
+            "x": 1158.0,
+            "y": 4.0,
+            "width": 396.0,
+            "height": 75.0
+          }
+        },
+        {
+          "id": 2,
+          "text": "⑥用",
+          "confidence": 0.4143,
+          "bbox": {
+            "x": 429.0,
+            "y": 11.0,
+            "width": 485.0,
+            "height": 58.0
+          }
+        },
+        {
+          "id": 3,
+          "text": "git管理的范围是文件目录",
+          "confidence": 0.9964,
+          "bbox": {
+            "x": 0,
+            "y": 472.0,
+            "width": 640.0,
+            "height": 89.0
+          }
+        },
+        {
+          "id": 4,
+          "text": "每个文件目录就是一个gf仓库",
+          "confidence": 0.916,
+          "bbox": {
+            "x": 0,
+            "y": 542.0,
+            "width": 710.0,
+            "height": 73.0
+          }
+        },
+        {
+          "id": 5,
+          "text": "git不是管你整个电脑的文件，你必须先把目录初始化为git仓库",
+          "confidence": 0.9909,
+          "bbox": {
+            "x": 0,
+            "y": 599.0,
+            "width": 1413.0,
+            "height": 85.0
+          }
+        },
+        {
+          "id": 6,
+          "text": "才能管理这个仓库即这个目录下的所有文件",
+          "confidence": 0.982,
+          "bbox": {
+            "x": 5.0,
+            "y": 671.0,
+            "width": 875.0,
+            "height": 66.0
+          }
+        },
+        {
+          "id": 7,
+          "text": "。",
+          "confidence": 0.7228,
+          "bbox": {
+            "x": 1390.0,
+            "y": 1022.0,
+            "width": 140.0,
+            "height": 46.0
+          }
+        }
+      ]
+    },
+    "image_metadata": {
+      "original_width": 1554,
+      "original_height": 1079,
+      "format": "jpeg",
+      "file_path": "original/0bb777544a51460aa97d08b32394570f.jpg"
+    },
+    "original_width": 1554,
+    "original_height": 1079,
+    "original_file_path": "original/0bb777544a51460aa97d08b32394570f.jpg",
+    "score": null,
+    "comment": "",
+    "is_exemplary": false,
+    "student_deleted": false,
+    "student_deleted_at": null,
+    "student_removed": false,
+    "teacher_deleted": true,
+    "teacher_deleted_at": "2026-07-24T21:17:09.578804",
+    "teacher_removed": false,
+    "submitted_at": "2026-07-24T20:38:34.123959",
+    "graded_at": null,
+    "ai_score": 50,
+    "ai_comment": "你理解了Git管理目录的基本概念，比如仓库是对一个目录进行版本管理，这个方向是对的。但你在描述中把“Git”写成了“gf”，这是明显的拼写错误，需要仔细检查。另外，答案只涉及了仓库概念，没有提到Git的核心作用——记录版本历史（commit）、提交信息等，这是Git最重要的功能。建议你回到课程资料，重点复习commit的组成（状态、时间、作者、说明）和仓库的初始化步骤。下次作业注意术语准确，并完整回答题目要求。",
+    "ai_rationale": "",
+    "ai_error_boxes": [
+      {
+        "ocr_id": 4,
+        "bbox": {
+          "x": 0,
+          "y": 536.0,
+          "width": 731.3,
+          "height": 85.0
+        },
+        "coordinate_space": "source_pixel",
+        "text": "每个文件目录就是一个gf仓库",
+        "reason": "将“Git”误写为“gf”，术语错误"
+      }
+    ],
+    "error_boxes": [],
+    "ai_model": "DeepSeek · deepseek-v4-flash",
+    "ai_generated_at": "2026-07-24T20:43:16.012644",
+    "ai_criteria_id": 2,
+    "ai_criteria_title": "git作业评分标准",
+    "review_status": "ai_suggested",
+    "reviewed_by": null
+  }
+]
