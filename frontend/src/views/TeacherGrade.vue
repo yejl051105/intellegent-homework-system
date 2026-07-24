@@ -2,9 +2,7 @@
   <div>
     <div class="page-header">
       <h2>批改作业</h2>
-      <router-link to="/teacher/dashboard">
-        <el-button><el-icon><arrow-left /></el-icon>返回全部作业</el-button>
-      </router-link>
+      <el-button @click="router.push('/teacher/dashboard')"><el-icon><arrow-left /></el-icon>返回全部作业</el-button>
     </div>
 
     <el-skeleton :loading="loading" animated :count="2">
@@ -21,19 +19,14 @@
               <p>ORIGINAL SUBMISSION</p>
               <h3>学生作业原图</h3>
             </div>
-            <span class="image-preview-badge" title="点击图片可放大查看原图"><el-icon><zoom-in /></el-icon></span>
           </div>
-          <el-image
+          <HomeworkAnnotationCanvas
             :src="`/uploads/${hw.filename}`"
-            :preview-src-list="[`/uploads/${hw.filename}`]"
-            preview-teleported
-            class="teacher-homework-image"
-            fit="contain"
-          >
-            <template #error>
-              <div class="image-load-error"><el-icon><picture /></el-icon><span>作业图片加载失败</span></div>
-            </template>
-          </el-image>
+            :boxes="errorBoxes"
+            :editable="hasAiSuggestion && !isFinalized"
+            :alt="`${hw.title} 的作业原图与错误标注`"
+            @update:boxes="errorBoxes = $event"
+          />
         </section>
 
         <section class="ai-review-panel">
@@ -50,7 +43,7 @@
           <el-alert v-if="requestError" type="error" :title="requestError" show-icon :closable="false" />
 
           <template v-if="!hasAiSuggestion && !isFinalized">
-            <p class="ai-review-copy">系统会先识别作业文字，再由模型给出评分和评语草稿。草稿不会直接对学生生效。</p>
+            <p class="ai-review-copy">系统会读取原图、作业答案与评分标准，给出分数和错误位置草稿。草稿不会直接对学生生效。</p>
             <div class="model-picker">
               <label for="review-model">本次批改使用的评分模型</label>
               <el-select id="review-model" v-model="selectedModelId" placeholder="请选择评分模型" @change="requestError = ''">
@@ -92,17 +85,6 @@
             <el-form-item label="建议分数（教师可修改）" required>
               <el-input-number v-model="reviewForm.score" :min="0" :max="100" :step="1" :precision="0" />
             </el-form-item>
-            <el-form-item label="建议评语（教师可修改）" required>
-              <el-input v-model="reviewForm.comment" type="textarea" :rows="5" maxlength="2000" show-word-limit />
-            </el-form-item>
-            <div v-if="!isFinalized" class="comment-reset-row">
-              <el-popconfirm title="将放弃当前手动修改，恢复为 AI 原始评语。" @confirm="resetComment">
-                <template #reference>
-                  <el-button text class="reset-comment-button"><el-icon><refresh-left /></el-icon>重置为 AI 原评语</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
-            <div v-if="hw.ai_rationale" class="ai-rationale"><strong>供复核参考：</strong>{{ hw.ai_rationale }}</div>
             <el-form-item v-if="!isFinalized">
               <el-button type="primary" native-type="submit" class="confirm-review-button" :loading="confirming">
                 {{ confirming ? '正在确认' : '确认复核并完成批改' }} <el-icon v-if="!confirming"><circle-check /></el-icon>
@@ -117,16 +99,19 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
+import HomeworkAnnotationCanvas from '../components/HomeworkAnnotationCanvas.vue'
 
 const route = useRoute()
+const router = useRouter()
 const hw = ref({})
 const loading = ref(true)
 const generating = ref(false)
 const confirming = ref(false)
 const requestError = ref('')
-const reviewForm = reactive({ score: null, comment: '' })
+const reviewForm = reactive({ score: null })
+const errorBoxes = ref([])
 
 const criteria = ref([])
 const aiModels = ref([])
@@ -140,7 +125,7 @@ const hasAvailableModel = computed(() => aiModels.value.some((item) => item.avai
 
 function syncReviewForm(data) {
   reviewForm.score = data.ai_score ?? data.score
-  reviewForm.comment = data.ai_comment || data.comment || ''
+  errorBoxes.value = data.ai_error_boxes || data.error_boxes || []
 }
 
 function formatDate(value) {
@@ -189,29 +174,15 @@ async function generateAiReview() {
   }
 }
 
-function resetComment() {
-  if (!hw.value.ai_comment) {
-    requestError.value = '当前没有可恢复的 AI 原始评语。'
-    return
-  }
-  reviewForm.comment = hw.value.ai_comment
-  requestError.value = ''
-}
-
 async function confirmReview() {
   requestError.value = ''
   if (!Number.isInteger(reviewForm.score) || reviewForm.score < 0 || reviewForm.score > 100) {
     requestError.value = '请填写 0 到 100 的整数分数。'
     return
   }
-  if (!reviewForm.comment.trim()) {
-    requestError.value = '请确认或修改教师评语后再完成批改。'
-    return
-  }
-
   confirming.value = true
   try {
-    const { data } = await api.post(`/teacher/grade/${route.params.id}`, reviewForm)
+    const { data } = await api.post(`/teacher/grade/${route.params.id}`, { score: reviewForm.score, error_boxes: errorBoxes.value })
     hw.value = data
     syncReviewForm(data)
   } catch (err) {

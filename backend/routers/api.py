@@ -359,11 +359,12 @@ async def api_teacher_generate_ai_review(request: Request, homework_id: int):
         status_code = 422 if model_id not in {"deepseek", "openai", "gemini"} else 503
         return JSONResponse({"detail": str(exc)}, status_code=status_code)
 
+    filepath = os.path.join(UPLOAD_FOLDER, homework.get("filename", ""))
+    if not homework.get("filename") or not os.path.isfile(filepath):
+        return JSONResponse({"detail": "未找到作业图片，无法生成 AI 建议。"}, status_code=404)
+
     ocr_text = homework.get("ocr_text", "").strip()
     if not ocr_text:
-        filepath = os.path.join(UPLOAD_FOLDER, homework.get("filename", ""))
-        if not homework.get("filename") or not os.path.isfile(filepath):
-            return JSONResponse({"detail": "未找到作业图片，无法生成 AI 建议。"}, status_code=404)
         try:
             ocr_text = await run_in_threadpool(extract_text, filepath)
         except Exception:
@@ -379,6 +380,7 @@ async def api_teacher_generate_ai_review(request: Request, homework_id: int):
             homework["title"],
             ocr_text,
             criteria_text,
+            filepath,
         )
     except ModelResponseError as exc:
         return JSONResponse({"detail": str(exc)}, status_code=502)
@@ -399,13 +401,25 @@ async def api_teacher_grade(request: Request, homework_id: int):
         return JSONResponse({"detail": "请先生成 AI 评分建议并完成教师复核。"}, status_code=409)
 
     score = body.get("score")
-    comment = body.get("comment", "")
     if isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 100:
         return JSONResponse({"detail": "分数必须是 0 到 100 的整数。"}, status_code=422)
-    if not isinstance(comment, str) or not comment.strip():
-        return JSONResponse({"detail": "请填写教师评语后再完成复核。"}, status_code=422)
+    error_boxes = body.get("error_boxes", [])
+    if not isinstance(error_boxes, list) or len(error_boxes) > 12:
+        return JSONResponse({"detail": "错误标注最多 12 个，且必须是矩形数组。"}, status_code=422)
+    normalized_boxes = []
+    for item in error_boxes:
+        if not isinstance(item, dict):
+            return JSONResponse({"detail": "错误标注格式无效。"}, status_code=422)
+        try:
+            x, y = float(item["x"]), float(item["y"])
+            width, height = float(item["width"]), float(item["height"])
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse({"detail": "错误标注坐标无效。"}, status_code=422)
+        if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > 1000 or y + height > 1000:
+            return JSONResponse({"detail": "错误标注必须位于作业图片范围内。"}, status_code=422)
+        normalized_boxes.append({"x": round(x, 2), "y": round(y, 2), "width": round(width, 2), "height": round(height, 2), "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案"})
 
-    hw = finalize_ai_review(homework_id, score, comment.strip()[:2000], user)
+    hw = finalize_ai_review(homework_id, score, normalized_boxes, user)
     return hw
 
 

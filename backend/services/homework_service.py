@@ -66,6 +66,8 @@ def create_homework(student_id: int, student_name: str, title: str, filename: st
         "ai_score": None,
         "ai_comment": "",
         "ai_rationale": "",
+        "ai_error_boxes": [],
+        "error_boxes": [],
         "ai_model": "",
         "ai_generated_at": None,
         "ai_criteria_id": None,
@@ -105,8 +107,9 @@ def save_ai_review(homework_id: int, review: dict, model: str, criterion: dict):
     for h in items:
         if h["id"] == homework_id:
             h["ai_score"] = review["score"]
-            h["ai_comment"] = review["comment"]
-            h["ai_rationale"] = review["rationale"]
+            h["ai_comment"] = ""
+            h["ai_rationale"] = ""
+            h["ai_error_boxes"] = review["error_boxes"]
             h["ai_model"] = model
             h["ai_generated_at"] = datetime.now().isoformat()
             h["ai_criteria_id"] = criterion["id"]
@@ -117,12 +120,13 @@ def save_ai_review(homework_id: int, review: dict, model: str, criterion: dict):
     return None
 
 
-def finalize_ai_review(homework_id: int, score: int, comment: str, reviewer: dict):
+def finalize_ai_review(homework_id: int, score: int, error_boxes: list[dict], reviewer: dict):
     items = _read_json(HOMEWORKS_FILE)
     for h in items:
         if h["id"] == homework_id:
             h["score"] = score
-            h["comment"] = comment
+            h["comment"] = ""
+            h["error_boxes"] = error_boxes
             h["graded_at"] = datetime.now().isoformat()
             h["review_status"] = "confirmed"
             h["reviewed_by"] = {"id": reviewer["id"], "name": reviewer["name"]}
