@@ -28,7 +28,7 @@
         </div>
         <div v-if="role === 'teacher'" class="card-meta">学生：{{ hw.student_name }}</div>
         <div class="card-meta">提交时间：{{ hw.submitted_at?.slice(0, 10) }}</div>
-        <div class="card-meta">删除时间：{{ hw.deleted_at?.slice(0, 10) || '刚刚' }}</div>
+        <div class="card-meta">删除时间：{{ deletedAt(hw)?.slice(0, 10) || '刚刚' }}</div>
         <div v-if="hw.score !== null" class="card-score">
           <el-tag type="primary">得分：{{ hw.score }}</el-tag>
         </div>
@@ -66,6 +66,10 @@ const homeworks = ref([])
 const loading = ref(true)
 const workingId = ref(null)
 const requestError = ref('')
+
+function deletedAt(homework) {
+  return homework[`${role.value}_deleted_at`] || homework.deleted_at
+}
 
 async function loadRecycleBin() {
   const { data } = await api.get(`${basePath.value}/recycle-bin`)

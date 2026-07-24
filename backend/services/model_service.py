@@ -56,6 +56,7 @@ _REVIEW_SCHEMA = {
     "type": "object",
     "properties": {
         "score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "comment": {"type": "string"},
         "error_items": {
             "type": "array",
             "items": {
@@ -81,7 +82,7 @@ _REVIEW_SCHEMA = {
             },
         },
     },
-    "required": ["score", "error_items"],
+    "required": ["score", "comment", "error_items"],
     "additionalProperties": False,
 }
 
@@ -89,6 +90,7 @@ _GEMINI_REVIEW_SCHEMA = {
     "type": "object",
     "properties": {
         "score": {"type": "integer"},
+        "comment": {"type": "string"},
         "error_items": {
             "type": "array",
             "items": {
@@ -112,7 +114,7 @@ _GEMINI_REVIEW_SCHEMA = {
             },
         },
     },
-    "required": ["score", "error_items"],
+    "required": ["score", "comment", "error_items"],
 }
 
 
@@ -178,8 +180,12 @@ def _parse_review(content: str, ocr_document: dict) -> dict:
     if not 0 <= score <= 100:
         raise ModelResponseError("模型返回的分数超出 0 到 100 的范围，请重新生成。")
 
+    comment = str(payload.get("comment", "")).strip()
+    if len(comment) < 30:
+        raise ModelResponseError("模型返回的评语过短，请重新生成。")
+
     error_boxes = _normalize_error_boxes(payload.get("error_items"), ocr_document)
-    return {"score": score, "error_boxes": error_boxes}
+    return {"score": score, "comment": comment[:2000], "error_boxes": error_boxes}
 
 
 def _normalize_error_boxes(value: object, ocr_document: dict) -> list[dict]:
@@ -227,6 +233,10 @@ def _normalize_error_boxes(value: object, ocr_document: dict) -> list[dict]:
 def _build_prompts(title: str, criteria_text: str, ocr_document: dict) -> tuple[str, str]:
     system_prompt = """你是一位认真、公平的任课教师。请根据评分标准和 PaddleOCR 返回的学生作业结构化结果，生成供教师复核的评分建议与错误定位。
 
+评语要求：
+1. comment 是给学生看的评语，必须只根据评分标准和 OCR 识别出的学生答案内容判断。使用自然、尊重、专业的中文教师口吻，不要提及“AI”“模型”“OCR”或坐标。
+2. 评语建议 100 到 240 个汉字，至少说明一个具体完成情况或优点、一个基于识别文本的主要问题，并给出下一步可执行的改进建议。不能使用“继续努力”“整体不错”等空泛套话。
+
 定位要求：
 1. OCR 对象中的每一项都有唯一 id、text 与原图像素坐标 box。只选择可确认是学生答案错误的 id，例如错误计算结果、错误选项、明显错误的文字或公式。不要选择空白处、整道大题、题目原文，也不要因为内容缺失而虚构一个框。
 2. error_items 的 id、text、box 必须逐字复制自 OCR 对象中被选中的项。服务端会校验并以 PaddleOCR 的原始 box 作为唯一坐标来源，不能自行改写坐标。
@@ -251,6 +261,7 @@ PaddleOCR 原始结构化结果（坐标单位为原图像素）：
 
 请只返回一个 JSON 对象，不要使用 Markdown 代码块。字段必须是：
 - score：0 到 100 的整数
+- comment：100 到 240 个汉字、面向学生的具体评语
 - error_items：错误文字数组；每项包含 id、text、box、reason。没有可确认的错误时返回 []
 """
     return system_prompt, user_prompt

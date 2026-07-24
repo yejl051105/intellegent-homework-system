@@ -48,6 +48,12 @@
             </template>
           </el-card>
 
+          <el-card class="feedback-card" shadow="never">
+            <div class="feedback-title"><el-icon><chat-line-round /></el-icon><h3>教师评语</h3></div>
+            <p v-if="homework.comment?.trim()" class="feedback-comment">{{ homework.comment }}</p>
+            <p v-else class="feedback-empty">{{ homework.score !== null ? '教师暂未填写文字评语。' : '作业尚未批改，暂时没有评语。' }}</p>
+          </el-card>
+
         </aside>
       </div>
     </el-skeleton>

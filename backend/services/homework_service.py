@@ -23,9 +23,36 @@ def _write_json(path, data):
 
 # ── Homeworks ──
 
-def get_homeworks(filters=None, include_deleted=False):
+def _role_flag(homework: dict, role: str, name: str) -> bool:
+    """Read role-scoped state while treating legacy global deletions as deleted."""
+    key = f"{role}_{name}"
+    if key in homework:
+        return bool(homework[key])
+    return bool(homework.get("is_deleted", False)) if name == "deleted" else False
+
+
+def _migrate_delete_state(homework: dict):
+    """Expand records written before role-scoped deletion existed."""
+    legacy_deleted = bool(homework.get("is_deleted", False))
+    legacy_deleted_at = homework.get("deleted_at")
+    for role in ("student", "teacher"):
+        homework.setdefault(f"{role}_deleted", legacy_deleted)
+        homework.setdefault(f"{role}_deleted_at", legacy_deleted_at if legacy_deleted else None)
+        homework.setdefault(f"{role}_removed", False)
+
+
+def get_homeworks(filters=None, include_deleted=False, role: str | None = None):
     items = _read_json(HOMEWORKS_FILE)
-    if not include_deleted:
+    if role:
+        if include_deleted:
+            items = [item for item in items if not _role_flag(item, role, "removed")]
+        else:
+            items = [
+                item
+                for item in items
+                if not _role_flag(item, role, "deleted") and not _role_flag(item, role, "removed")
+            ]
+    elif not include_deleted:
         items = [i for i in items if not i.get("is_deleted", False)]
     if filters:
         for key, val in filters.items():
@@ -33,13 +60,20 @@ def get_homeworks(filters=None, include_deleted=False):
     return sorted(items, key=lambda x: x.get("submitted_at", ""), reverse=True)
 
 
-def get_deleted_homeworks(filters=None):
-    deleted_filters = {"is_deleted": True, **(filters or {})}
-    return get_homeworks(include_deleted=True, filters=deleted_filters)
+def get_deleted_homeworks(role: str, filters=None):
+    items = [
+        item
+        for item in _read_json(HOMEWORKS_FILE)
+        if _role_flag(item, role, "deleted") and not _role_flag(item, role, "removed")
+    ]
+    if filters:
+        for key, value in filters.items():
+            items = [item for item in items if item.get(key) == value]
+    return sorted(items, key=lambda x: x.get("submitted_at", ""), reverse=True)
 
 
-def get_homework(homework_id: int, include_deleted=False):
-    items = get_homeworks(include_deleted=include_deleted)
+def get_homework(homework_id: int, include_deleted=False, role: str | None = None):
+    items = get_homeworks(include_deleted=include_deleted, role=role)
     for h in items:
         if h["id"] == homework_id:
             return h
@@ -60,8 +94,12 @@ def create_homework(student_id: int, student_name: str, title: str, filename: st
         "score": None,
         "comment": "",
         "is_exemplary": False,
-        "is_deleted": False,
-        "deleted_at": None,
+        "student_deleted": False,
+        "student_deleted_at": None,
+        "student_removed": False,
+        "teacher_deleted": False,
+        "teacher_deleted_at": None,
+        "teacher_removed": False,
         "submitted_at": datetime.now().isoformat(),
         "graded_at": None,
         "ai_score": None,
@@ -115,7 +153,7 @@ def save_ai_review(homework_id: int, review: dict, model: str, criterion: dict):
             h["graded_at"] = None
             h["reviewed_by"] = None
             h["ai_score"] = review["score"]
-            h["ai_comment"] = ""
+            h["ai_comment"] = review["comment"]
             h["ai_rationale"] = ""
             h["ai_error_boxes"] = review["error_boxes"]
             h["ai_model"] = model
@@ -128,12 +166,12 @@ def save_ai_review(homework_id: int, review: dict, model: str, criterion: dict):
     return None
 
 
-def finalize_ai_review(homework_id: int, score: int, error_boxes: list[dict], reviewer: dict):
+def finalize_ai_review(homework_id: int, score: int, comment: str, error_boxes: list[dict], reviewer: dict):
     items = _read_json(HOMEWORKS_FILE)
     for h in items:
         if h["id"] == homework_id:
             h["score"] = score
-            h["comment"] = ""
+            h["comment"] = comment
             h["error_boxes"] = error_boxes
             h["graded_at"] = datetime.now().isoformat()
             h["review_status"] = "confirmed"
@@ -177,36 +215,41 @@ def set_exemplary(homework_id: int, exemplary: bool = True):
     return None
 
 
-def delete_homework(homework_id: int):
+def delete_homework(homework_id: int, role: str):
     items = _read_json(HOMEWORKS_FILE)
     for homework in items:
-        if homework["id"] == homework_id and not homework.get("is_deleted", False):
-            homework["is_deleted"] = True
-            homework["deleted_at"] = datetime.now().isoformat()
+        _migrate_delete_state(homework)
+        if homework["id"] == homework_id and not _role_flag(homework, role, "deleted") and not _role_flag(homework, role, "removed"):
+            homework[f"{role}_deleted"] = True
+            homework[f"{role}_deleted_at"] = datetime.now().isoformat()
             _write_json(HOMEWORKS_FILE, items)
             return homework
     return None
 
 
-def restore_homework(homework_id: int):
+def restore_homework(homework_id: int, role: str):
     items = _read_json(HOMEWORKS_FILE)
     for homework in items:
-        if homework["id"] == homework_id and homework.get("is_deleted", False):
-            homework["is_deleted"] = False
-            homework["deleted_at"] = None
+        _migrate_delete_state(homework)
+        if homework["id"] == homework_id and _role_flag(homework, role, "deleted") and not _role_flag(homework, role, "removed"):
+            homework[f"{role}_deleted"] = False
+            homework[f"{role}_deleted_at"] = None
             _write_json(HOMEWORKS_FILE, items)
             return homework
     return None
 
 
-def permanently_delete_homework(homework_id: int):
+def permanently_delete_homework(homework_id: int, role: str):
     items = _read_json(HOMEWORKS_FILE)
     for index, homework in enumerate(items):
-        if homework["id"] == homework_id and homework.get("is_deleted", False):
-            deleted = items.pop(index)
+        _migrate_delete_state(homework)
+        if homework["id"] == homework_id and _role_flag(homework, role, "deleted") and not _role_flag(homework, role, "removed"):
+            homework[f"{role}_removed"] = True
+            fully_removed = _role_flag(homework, "student", "removed") and _role_flag(homework, "teacher", "removed")
+            deleted = items.pop(index) if fully_removed else homework
             _write_json(HOMEWORKS_FILE, items)
-            return deleted
-    return None
+            return deleted, fully_removed
+    return None, False
 
 
 def remove_related_exemplary(homework: dict):

@@ -97,6 +97,9 @@
             <el-form-item label="建议分数（教师可修改）" required>
               <el-input-number v-model="reviewForm.score" :min="0" :max="100" :step="1" :precision="0" />
             </el-form-item>
+            <el-form-item label="建议评语（教师可修改）" required>
+              <el-input v-model="reviewForm.comment" type="textarea" :rows="5" maxlength="2000" show-word-limit />
+            </el-form-item>
             <el-form-item v-if="!isFinalized">
               <el-button type="primary" native-type="submit" class="confirm-review-button" :loading="confirming">
                 {{ confirming ? '正在确认' : '确认复核并完成批改' }} <el-icon v-if="!confirming"><circle-check /></el-icon>
@@ -123,7 +126,7 @@ const generating = ref(false)
 const confirming = ref(false)
 const resetting = ref(false)
 const requestError = ref('')
-const reviewForm = reactive({ score: null })
+const reviewForm = reactive({ score: null, comment: '' })
 const errorBoxes = ref([])
 
 const criteria = ref([])
@@ -138,6 +141,7 @@ const hasAvailableModel = computed(() => aiModels.value.some((item) => item.avai
 
 function syncReviewForm(data) {
   reviewForm.score = data.ai_score ?? data.score
+  reviewForm.comment = data.ai_comment || data.comment || ''
   errorBoxes.value = data.ai_error_boxes || data.error_boxes || []
 }
 
@@ -193,9 +197,13 @@ async function confirmReview() {
     requestError.value = '请填写 0 到 100 的整数分数。'
     return
   }
+  if (!reviewForm.comment.trim()) {
+    requestError.value = '请确认或修改教师评语后再完成批改。'
+    return
+  }
   confirming.value = true
   try {
-    const { data } = await api.post(`/teacher/grade/${route.params.id}`, { score: reviewForm.score, error_boxes: errorBoxes.value })
+    const { data } = await api.post(`/teacher/grade/${route.params.id}`, { score: reviewForm.score, comment: reviewForm.comment, error_boxes: errorBoxes.value })
     hw.value = data
     syncReviewForm(data)
   } catch (err) {
