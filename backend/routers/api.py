@@ -30,6 +30,7 @@ from backend.services.homework_service import (
     create_exemplary,
     delete_exemplary,
     save_ai_review,
+    reset_ai_review,
     save_ocr_document,
     delete_homework,
     restore_homework,
@@ -322,9 +323,6 @@ async def api_teacher_generate_ai_review(request: Request, homework_id: int):
     homework = get_homework(homework_id)
     if not homework:
         return JSONResponse({"detail": "作业不存在"}, status_code=404)
-    if homework.get("review_status") == "confirmed" or homework.get("score") is not None:
-        return JSONResponse({"detail": "该作业已完成复核，不能再次生成 AI 建议。"}, status_code=409)
-
     try:
         body = await request.json()
     except Exception:
@@ -387,6 +385,17 @@ async def api_teacher_generate_ai_review(request: Request, homework_id: int):
     return save_ai_review(homework_id, review, f"{settings.label} · {settings.model}", criterion)
 
 
+@router.post("/teacher/homework/{homework_id}/reset-review")
+async def api_teacher_reset_ai_review(request: Request, homework_id: int):
+    user = require_user(request, "teacher")
+    if not user:
+        return JSONResponse({"detail": "未登录"}, status_code=401)
+    homework = get_homework(homework_id)
+    if not homework:
+        return JSONResponse({"detail": "作业不存在"}, status_code=404)
+    return reset_ai_review(homework_id)
+
+
 @router.post("/teacher/grade/{homework_id}")
 async def api_teacher_grade(request: Request, homework_id: int):
     user = require_user(request, "teacher")
@@ -416,7 +425,7 @@ async def api_teacher_grade(request: Request, homework_id: int):
             return JSONResponse({"detail": "错误标注坐标无效。"}, status_code=422)
         if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > 1000 or y + height > 1000:
             return JSONResponse({"detail": "错误标注必须位于作业图片范围内。"}, status_code=422)
-        normalized_boxes.append({"x": round(x, 2), "y": round(y, 2), "width": round(width, 2), "height": round(height, 2), "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案"})
+        normalized_boxes.append({"x": round(x, 2), "y": round(y, 2), "width": round(width, 2), "height": round(height, 2), "text": str(item.get("text", "")).strip()[:500], "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案"})
 
     hw = finalize_ai_review(homework_id, score, normalized_boxes, user)
     return hw

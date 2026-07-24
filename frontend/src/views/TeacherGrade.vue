@@ -35,14 +35,26 @@
               <p>AI REVIEW DRAFT</p>
               <h3>模型评分建议</h3>
             </div>
-            <el-tag v-if="isFinalized" type="success">已完成复核</el-tag>
-            <el-tag v-else-if="hasAiSuggestion" type="info">等待教师确认</el-tag>
-            <el-tag v-else type="warning">尚未生成</el-tag>
+            <div class="ai-review-actions">
+              <el-tag v-if="isFinalized" type="success">已完成复核</el-tag>
+              <el-tag v-else-if="hasAiSuggestion" type="info">等待教师确认</el-tag>
+              <el-tag v-else type="warning">尚未生成</el-tag>
+              <el-popconfirm v-if="hasAiSuggestion" title="将覆盖当前 AI 草稿并重新生成。" @confirm="generateAiReview">
+                <template #reference>
+                  <el-button circle title="重新生成 AI 建议" aria-label="重新生成 AI 建议" :loading="generating"><el-icon><refresh-right /></el-icon></el-button>
+                </template>
+              </el-popconfirm>
+              <el-popconfirm v-if="hasAiSuggestion || isFinalized" title="将清空本次评分、AI 建议和错误标注。" @confirm="resetReview">
+                <template #reference>
+                  <el-button plain type="warning" :loading="resetting"><el-icon><refresh-left /></el-icon>重置为未评分</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </div>
 
           <el-alert v-if="requestError" type="error" :title="requestError" show-icon :closable="false" />
 
-          <template v-if="!hasAiSuggestion && !isFinalized">
+          <template v-if="!hasAiSuggestion">
             <p class="ai-review-copy">系统会读取原图、作业答案与评分标准，给出分数和错误位置草稿。草稿不会直接对学生生效。</p>
             <div class="model-picker">
               <label for="review-model">本次批改使用的评分模型</label>
@@ -72,7 +84,7 @@
             </div>
             <el-alert v-else type="warning" title="请先在“评分标准”中添加文字或附件标准，才能生成 AI 建议。" :closable="false" show-icon />
             <el-button type="primary" class="generate-review-button" :loading="generating" :disabled="!selectedCriteriaId || !selectedModelId" @click="generateAiReview">
-              <el-icon><magic-stick /></el-icon>{{ generating ? '正在生成建议' : '生成 AI 批改建议' }}
+              <el-icon><magic-stick /></el-icon>{{ generating ? '正在生成建议' : isFinalized ? '重新生成 AI 批改建议' : '生成 AI 批改建议' }}
             </el-button>
           </template>
 
@@ -109,6 +121,7 @@ const hw = ref({})
 const loading = ref(true)
 const generating = ref(false)
 const confirming = ref(false)
+const resetting = ref(false)
 const requestError = ref('')
 const reviewForm = reactive({ score: null })
 const errorBoxes = ref([])
@@ -189,6 +202,20 @@ async function confirmReview() {
     requestError.value = err.response?.data?.detail || '完成复核失败，请稍后重试。'
   } finally {
     confirming.value = false
+  }
+}
+
+async function resetReview() {
+  requestError.value = ''
+  resetting.value = true
+  try {
+    const { data } = await api.post(`/teacher/homework/${route.params.id}/reset-review`)
+    hw.value = data
+    syncReviewForm(data)
+  } catch (err) {
+    requestError.value = err.response?.data?.detail || '重置评分失败，请稍后重试。'
+  } finally {
+    resetting.value = false
   }
 }
 

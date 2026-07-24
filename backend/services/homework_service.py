@@ -108,6 +108,12 @@ def save_ai_review(homework_id: int, review: dict, model: str, criterion: dict):
     items = _read_json(HOMEWORKS_FILE)
     for h in items:
         if h["id"] == homework_id:
+            # A new AI run replaces any previously confirmed result with a draft.
+            h["score"] = None
+            h["comment"] = ""
+            h["error_boxes"] = []
+            h["graded_at"] = None
+            h["reviewed_by"] = None
             h["ai_score"] = review["score"]
             h["ai_comment"] = ""
             h["ai_rationale"] = ""
@@ -132,6 +138,30 @@ def finalize_ai_review(homework_id: int, score: int, error_boxes: list[dict], re
             h["graded_at"] = datetime.now().isoformat()
             h["review_status"] = "confirmed"
             h["reviewed_by"] = {"id": reviewer["id"], "name": reviewer["name"]}
+            _write_json(HOMEWORKS_FILE, items)
+            return h
+    return None
+
+
+def reset_ai_review(homework_id: int):
+    """Return a homework to the same review state it had immediately after upload."""
+    items = _read_json(HOMEWORKS_FILE)
+    for h in items:
+        if h["id"] == homework_id:
+            h["score"] = None
+            h["comment"] = ""
+            h["error_boxes"] = []
+            h["graded_at"] = None
+            h["ai_score"] = None
+            h["ai_comment"] = ""
+            h["ai_rationale"] = ""
+            h["ai_error_boxes"] = []
+            h["ai_model"] = ""
+            h["ai_generated_at"] = None
+            h["ai_criteria_id"] = None
+            h["ai_criteria_title"] = ""
+            h["review_status"] = "pending_ai"
+            h["reviewed_by"] = None
             _write_json(HOMEWORKS_FILE, items)
             return h
     return None

@@ -58,6 +58,7 @@ function createRect(box, index) {
     borderColor: '#e5484d',
     objectCaching: false,
     annotationId: index,
+    annotationText: box.text || '',
     annotationReason: box.reason || '错误答案',
   })
 }
@@ -83,6 +84,7 @@ function emitBoxes() {
       y: Number(((item.top / canvas.height) * 1000).toFixed(2)),
       width: Number(((item.getScaledWidth() / canvas.width) * 1000).toFixed(2)),
       height: Number(((item.getScaledHeight() / canvas.height) * 1000).toFixed(2)),
+      text: item.annotationText || '',
       reason: item.annotationReason || '错误答案',
     }))
   emit('update:boxes', boxes)
