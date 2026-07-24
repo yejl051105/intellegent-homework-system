@@ -100,6 +100,16 @@ function keepObjectInsideCanvas(event) {
   target.setCoords()
 }
 
+function fitCanvasToContainer() {
+  if (!canvas || !image || !stageRef.value || !image.width || !image.height) return
+  const displayWidth = Math.min(image.width, stageRef.value.clientWidth || image.width)
+  const displayHeight = displayWidth * (image.height / image.width)
+  canvas.setDimensions(
+    { width: `${displayWidth}px`, height: `${displayHeight}px` },
+    { cssOnly: true },
+  )
+}
+
 async function initializeCanvas() {
   if (!canvasRef.value || !stageRef.value || !props.src) return
   const version = ++renderVersion
@@ -117,13 +127,12 @@ async function initializeCanvas() {
     const loadedImage = await FabricImage.fromURL(props.src, { crossOrigin: 'anonymous' })
     if (version !== renderVersion || !canvas) return
     image = loadedImage
-    const availableWidth = stageRef.value.clientWidth || image.width
-    const scale = Math.min(1, availableWidth / image.width)
-    const height = Math.round(image.height * scale)
-    canvas.setDimensions({ width: Math.round(availableWidth), height })
-    image.set({ left: 0, top: 0, selectable: false, evented: false, scaleX: scale, scaleY: scale })
+    stageRef.value.style.maxWidth = `${image.width}px`
+    canvas.setDimensions({ width: image.width, height: image.height }, { backstoreOnly: true })
+    image.set({ left: 0, top: 0, selectable: false, evented: false, scaleX: 1, scaleY: 1 })
     canvas.add(image)
     renderBoxes()
+    fitCanvasToContainer()
   } catch {
     // The surrounding page owns image loading errors; avoid leaving a broken Fabric instance behind.
     canvas?.dispose()
@@ -139,7 +148,7 @@ onMounted(async () => {
     const width = Math.round(entry.contentRect.width)
     if (width && Math.abs(width - observedWidth) > 1) {
       observedWidth = width
-      initializeCanvas()
+      fitCanvasToContainer()
     }
   })
   if (stageRef.value) resizeObserver.observe(stageRef.value)
