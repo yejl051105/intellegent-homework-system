@@ -5,7 +5,12 @@
     </el-button>
     <canvas ref="canvasRef" :aria-label="alt"></canvas>
   </div>
-  <el-image-viewer v-if="previewVisible" :url-list="[src]" @close="previewVisible = false" />
+  <el-image-viewer
+    v-if="previewVisible"
+    :url-list="[src]"
+    hide-on-click-modal
+    @close="previewVisible = false"
+  />
 </template>
 
 <script setup>
@@ -100,6 +105,11 @@ function keepObjectInsideCanvas(event) {
   target.setCoords()
 }
 
+function openPreviewFromCanvas(event) {
+  if (event.target && event.target !== image) return
+  previewVisible.value = true
+}
+
 function fitCanvasToContainer() {
   if (!canvas || !image || !stageRef.value || !image.width || !image.height) return
   const displayWidth = Math.min(image.width, stageRef.value.clientWidth || image.width)
@@ -118,7 +128,10 @@ async function initializeCanvas() {
     selection: props.editable,
     preserveObjectStacking: true,
     backgroundColor: '#ffffff',
+    defaultCursor: 'zoom-in',
+    hoverCursor: props.editable ? 'move' : 'zoom-in',
   })
+  canvas.on('mouse:up', openPreviewFromCanvas)
   canvas.on('object:moving', keepObjectInsideCanvas)
   canvas.on('object:scaling', keepObjectInsideCanvas)
   canvas.on('object:modified', emitBoxes)
@@ -174,7 +187,6 @@ onBeforeUnmount(() => {
   border-radius: 6px;
 }
 
-.annotation-stage--editable :deep(.upper-canvas) { cursor: move; }
 .annotation-stage :deep(.canvas-container) { margin: 0 auto; }
 .annotation-zoom.el-button {
   position: absolute;
