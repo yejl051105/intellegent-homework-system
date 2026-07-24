@@ -1,4 +1,5 @@
 import json
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -184,21 +185,24 @@ def _parse_review(content: str, ocr_document: dict) -> dict:
     if len(comment) < 30:
         raise ModelResponseError("模型返回的评语过短，请重新生成。")
 
-    error_boxes = _normalize_error_boxes(payload.get("error_items"), ocr_document)
+    error_boxes = _resolve_error_boxes(payload.get("error_items"), ocr_document)
     return {"score": score, "comment": comment[:2000], "error_boxes": error_boxes}
 
 
-def _normalize_error_boxes(value: object, ocr_document: dict) -> list[dict]:
+def _resolve_error_boxes(value: object, ocr_document: dict) -> list[dict]:
     if not isinstance(value, list):
         raise ModelResponseError("模型返回的错误标注格式无效，请重新生成。")
 
-    image_width = float(ocr_document.get("image_width", 0))
-    image_height = float(ocr_document.get("image_height", 0))
+    try:
+        image_width = float(ocr_document.get("image_width", 0))
+        image_height = float(ocr_document.get("image_height", 0))
+    except (TypeError, ValueError) as exc:
+        raise ModelResponseError("OCR 缺少原图尺寸，无法定位错误标注。") from exc
     source_items = {item.get("id"): item for item in ocr_document.get("items", []) if isinstance(item, dict)}
-    if image_width <= 0 or image_height <= 0:
-        raise ModelResponseError("OCR 缺少原图尺寸，无法转换错误标注坐标。")
+    if not all(math.isfinite(value) and value > 0 for value in (image_width, image_height)):
+        raise ModelResponseError("OCR 缺少原图尺寸，无法定位错误标注。")
 
-    normalized = []
+    resolved = []
     selected_ids = set()
     for item in value[:12]:
         if not isinstance(item, dict):
@@ -214,20 +218,23 @@ def _normalize_error_boxes(value: object, ocr_document: dict) -> list[dict]:
             height = float(box["height"])
         except (KeyError, TypeError, ValueError):
             continue
+        if not all(math.isfinite(number) for number in (x, y, width, height)):
+            continue
         if x < 0 or y < 0 or width <= 0 or height <= 0 or x >= image_width or y >= image_height:
             continue
         selected_ids.add(source_item["id"])
-        normalized.append(
+        resolved.append(
             {
-                "x": round(max(0, x) / image_width * 1000, 2),
-                "y": round(max(0, y) / image_height * 1000, 2),
-                "width": round(max(1, min(width, image_width - x)) / image_width * 1000, 2),
-                "height": round(max(1, min(height, image_height - y)) / image_height * 1000, 2),
+                "x": round(max(0, x), 2),
+                "y": round(max(0, y), 2),
+                "width": round(max(1, min(width, image_width - x)), 2),
+                "height": round(max(1, min(height, image_height - y)), 2),
+                "coordinate_space": "source_pixel",
                 "text": source_item.get("text", ""),
                 "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案",
             }
         )
-    return normalized
+    return resolved
 
 
 def _build_prompts(title: str, criteria_text: str, ocr_document: dict) -> tuple[str, str]:

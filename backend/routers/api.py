@@ -1,3 +1,4 @@
+import math
 import os
 import uuid
 
@@ -421,20 +422,44 @@ async def api_teacher_grade(request: Request, homework_id: int):
     error_boxes = body.get("error_boxes", [])
     if not isinstance(error_boxes, list) or len(error_boxes) > 12:
         return JSONResponse({"detail": "错误标注最多 12 个，且必须是矩形数组。"}, status_code=422)
-    normalized_boxes = []
+    ocr_document = homework.get("ocr_document") or {}
+    try:
+        image_width = float(ocr_document["image_width"])
+        image_height = float(ocr_document["image_height"])
+    except (KeyError, TypeError, ValueError):
+        return JSONResponse({"detail": "OCR 缺少原图尺寸，无法校验错误标注。"}, status_code=422)
+    if not all(math.isfinite(value) and value > 0 for value in (image_width, image_height)):
+        return JSONResponse({"detail": "OCR 原图尺寸无效，无法校验错误标注。"}, status_code=422)
+
+    source_pixel_boxes = []
     for item in error_boxes:
         if not isinstance(item, dict):
             return JSONResponse({"detail": "错误标注格式无效。"}, status_code=422)
+        if item.get("coordinate_space") != "source_pixel":
+            return JSONResponse({"detail": "错误标注必须使用原图像素坐标。"}, status_code=422)
         try:
             x, y = float(item["x"]), float(item["y"])
             width, height = float(item["width"]), float(item["height"])
         except (KeyError, TypeError, ValueError):
             return JSONResponse({"detail": "错误标注坐标无效。"}, status_code=422)
-        if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > 1000 or y + height > 1000:
+        coordinates = (x, y, width, height)
+        if not all(math.isfinite(value) for value in coordinates):
+            return JSONResponse({"detail": "错误标注坐标无效。"}, status_code=422)
+        if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > image_width + 0.01 or y + height > image_height + 0.01:
             return JSONResponse({"detail": "错误标注必须位于作业图片范围内。"}, status_code=422)
-        normalized_boxes.append({"x": round(x, 2), "y": round(y, 2), "width": round(width, 2), "height": round(height, 2), "text": str(item.get("text", "")).strip()[:500], "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案"})
+        source_pixel_boxes.append(
+            {
+                "x": round(x, 2),
+                "y": round(y, 2),
+                "width": round(width, 2),
+                "height": round(height, 2),
+                "coordinate_space": "source_pixel",
+                "text": str(item.get("text", "")).strip()[:500],
+                "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案",
+            }
+        )
 
-    hw = finalize_ai_review(homework_id, score, comment.strip()[:2000], normalized_boxes, user)
+    hw = finalize_ai_review(homework_id, score, comment.strip()[:2000], source_pixel_boxes, user)
     return hw
 
 

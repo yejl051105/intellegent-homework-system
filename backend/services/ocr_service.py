@@ -99,7 +99,12 @@ def extract_text_document(filepath: str) -> dict:
                 }
             )
 
-    return {"image_width": image_width, "image_height": image_height, "items": items}
+    return {
+        "coordinate_space": "source_pixel",
+        "image_width": image_width,
+        "image_height": image_height,
+        "items": items,
+    }
 
 
 def save_upload(image, upload_folder: str) -> str:

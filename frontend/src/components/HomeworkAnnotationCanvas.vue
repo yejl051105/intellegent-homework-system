@@ -1,5 +1,10 @@
 <template>
-  <div ref="stageRef" class="annotation-stage" :class="{ 'annotation-stage--editable': editable }">
+  <div
+    ref="stageRef"
+    class="annotation-stage"
+    :class="{ 'annotation-stage--editable': editable }"
+    :style="stageStyle"
+  >
     <el-button class="annotation-zoom" circle title="放大查看原图" aria-label="放大查看原图" @click="previewVisible = true">
       <el-icon><zoom-in /></el-icon>
     </el-button>
@@ -28,30 +33,40 @@ const emit = defineEmits(['update:boxes'])
 const stageRef = ref(null)
 const canvasRef = ref(null)
 const previewVisible = ref(false)
+const stageStyle = ref({})
 let canvas = null
 let image = null
-let resizeObserver = null
 let renderVersion = 0
 let isSyncing = false
-let observedWidth = 0
 
 function toCanvasBox(box) {
+  // Unmarked boxes are legacy data stored in the old 0-1000 coordinate space.
+  const usesSourcePixels = box.coordinate_space === 'source_pixel'
+  const scaleX = usesSourcePixels ? 1 : canvas.width / 1000
+  const scaleY = usesSourcePixels ? 1 : canvas.height / 1000
+  const left = Number(box.x) * scaleX
+  const top = Number(box.y) * scaleY
+  const width = Number(box.width) * scaleX
+  const height = Number(box.height) * scaleY
+  const boundedLeft = Math.max(0, Math.min(left, canvas.width - 1))
+  const boundedTop = Math.max(0, Math.min(top, canvas.height - 1))
   return {
-    left: (Number(box.x) / 1000) * canvas.width,
-    top: (Number(box.y) / 1000) * canvas.height,
-    width: (Number(box.width) / 1000) * canvas.width,
-    height: (Number(box.height) / 1000) * canvas.height,
+    left: boundedLeft,
+    top: boundedTop,
+    width: Math.max(1, Math.min(width, canvas.width - boundedLeft)),
+    height: Math.max(1, Math.min(height, canvas.height - boundedTop)),
   }
 }
 
 function createRect(box, index) {
   const position = toCanvasBox(box)
+  const strokeWidth = Math.max(3, Math.min(canvas.width, canvas.height) * 0.004)
   return new Rect({
     ...position,
     fill: 'rgba(229, 72, 77, 0.08)',
     stroke: '#e5484d',
-    strokeWidth: 3,
-    strokeDashArray: [9, 5],
+    strokeWidth,
+    strokeDashArray: [strokeWidth * 3, strokeWidth * 1.6],
     strokeUniform: true,
     selectable: props.editable,
     evented: props.editable,
@@ -73,7 +88,10 @@ function renderBoxes() {
   isSyncing = true
   canvas.getObjects().filter((item) => item !== image).forEach((item) => canvas.remove(item))
   props.boxes.forEach((box, index) => {
-    if (box && Number(box.width) > 0 && Number(box.height) > 0) canvas.add(createRect(box, index))
+    const coordinates = [box?.x, box?.y, box?.width, box?.height].map(Number)
+    if (coordinates.every(Number.isFinite) && coordinates[2] > 0 && coordinates[3] > 0) {
+      canvas.add(createRect(box, index))
+    }
   })
   image.sendToBack()
   canvas.renderAll()
@@ -85,10 +103,11 @@ function emitBoxes() {
   const boxes = canvas.getObjects()
     .filter((item) => item !== image && item.type === 'rect')
     .map((item) => ({
-      x: Number(((item.left / canvas.width) * 1000).toFixed(2)),
-      y: Number(((item.top / canvas.height) * 1000).toFixed(2)),
-      width: Number(((item.getScaledWidth() / canvas.width) * 1000).toFixed(2)),
-      height: Number(((item.getScaledHeight() / canvas.height) * 1000).toFixed(2)),
+      x: Number(item.left.toFixed(2)),
+      y: Number(item.top.toFixed(2)),
+      width: Number(item.getScaledWidth().toFixed(2)),
+      height: Number(item.getScaledHeight().toFixed(2)),
+      coordinate_space: 'source_pixel',
       text: item.annotationText || '',
       reason: item.annotationReason || '错误答案',
     }))
@@ -108,16 +127,6 @@ function keepObjectInsideCanvas(event) {
 function openPreviewFromCanvas(event) {
   if (event.target && event.target !== image) return
   previewVisible.value = true
-}
-
-function fitCanvasToContainer() {
-  if (!canvas || !image || !stageRef.value || !image.width || !image.height) return
-  const displayWidth = Math.min(image.width, stageRef.value.clientWidth || image.width)
-  const displayHeight = displayWidth * (image.height / image.width)
-  canvas.setDimensions(
-    { width: `${displayWidth}px`, height: `${displayHeight}px` },
-    { cssOnly: true },
-  )
 }
 
 async function initializeCanvas() {
@@ -140,12 +149,16 @@ async function initializeCanvas() {
     const loadedImage = await FabricImage.fromURL(props.src, { crossOrigin: 'anonymous' })
     if (version !== renderVersion || !canvas) return
     image = loadedImage
-    stageRef.value.style.maxWidth = `${image.width}px`
-    canvas.setDimensions({ width: image.width, height: image.height }, { backstoreOnly: true })
+    stageStyle.value = {
+      '--annotation-image-width': `${image.width}px`,
+      '--annotation-image-ratio': `${image.width} / ${image.height}`,
+    }
+    // Browser coordinate = source pixel * rendered size / natural size. Fabric applies the inverse
+    // mapping to pointer events because both canvas layers share this responsive CSS size.
+    canvas.setDimensions({ width: image.width, height: image.height })
     image.set({ left: 0, top: 0, selectable: false, evented: false, scaleX: 1, scaleY: 1 })
     canvas.add(image)
     renderBoxes()
-    fitCanvasToContainer()
   } catch {
     // The surrounding page owns image loading errors; avoid leaving a broken Fabric instance behind.
     canvas?.dispose()
@@ -157,14 +170,6 @@ async function initializeCanvas() {
 onMounted(async () => {
   await nextTick()
   await initializeCanvas()
-  resizeObserver = new ResizeObserver(([entry]) => {
-    const width = Math.round(entry.contentRect.width)
-    if (width && Math.abs(width - observedWidth) > 1) {
-      observedWidth = width
-      fitCanvasToContainer()
-    }
-  })
-  if (stageRef.value) resizeObserver.observe(stageRef.value)
 })
 
 watch(() => props.src, initializeCanvas)
@@ -172,7 +177,6 @@ watch(() => props.boxes, renderBoxes, { deep: true })
 watch(() => props.editable, initializeCanvas)
 
 onBeforeUnmount(() => {
-  resizeObserver?.disconnect()
   canvas?.dispose()
 })
 </script>
@@ -180,14 +184,26 @@ onBeforeUnmount(() => {
 <style scoped>
 .annotation-stage {
   position: relative;
-  width: 100%;
-  overflow: hidden;
+  width: min(100%, var(--annotation-image-width, 100%));
+  aspect-ratio: var(--annotation-image-ratio, auto);
+  overflow: visible;
   background: #f7faf9;
   border: 1px solid #dbe7e2;
   border-radius: 6px;
+  margin-inline: auto;
 }
 
-.annotation-stage :deep(.canvas-container) { margin: 0 auto; }
+.annotation-stage :deep(.canvas-container) {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.annotation-stage :deep(.lower-canvas),
+.annotation-stage :deep(.upper-canvas) {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .annotation-zoom.el-button {
   position: absolute;
   top: 12px;
