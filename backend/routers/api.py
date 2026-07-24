@@ -13,7 +13,7 @@ from backend.services.model_service import (
     get_model_options,
     get_model_settings,
 )
-from backend.services.ocr_service import BASE_DIR, extract_text_document
+from backend.services.ocr_service import BASE_DIR, extract_text_document, save_original_upload
 from backend.services.criteria_service import CriteriaExtractionError, extract_criteria_text
 from backend.services.auth_service import authenticate
 from backend.services.permission_service import get_route_permissions
@@ -212,18 +212,27 @@ async def api_student_upload(
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
 
-    ext = os.path.splitext(image.filename or "image.jpg")[1] or ".jpg"
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    save_path = os.path.join(UPLOAD_FOLDER, unique_name)
     content = await image.read()
-    with open(save_path, "wb") as f:
-        f.write(content)
+    if not content:
+        return JSONResponse({"detail": "上传文件为空。"}, status_code=422)
+
+    save_path = None
+    try:
+        unique_name, save_path, image_metadata = save_original_upload(image.filename, content)
+        ocr_document = await run_in_threadpool(extract_text_document, save_path, unique_name)
+    except Exception as exc:
+        if save_path and os.path.isfile(save_path):
+            os.remove(save_path)
+        message = "上传图片不是有效的图片文件。" if "cannot identify image" in str(exc).lower() else "原图文字识别失败，请检查图片后重试。"
+        return JSONResponse({"detail": message}, status_code=422)
 
     hw = create_homework(
         student_id=user["id"],
         student_name=user["name"],
         title=title,
         filename=unique_name,
+        ocr_document=ocr_document,
+        image_metadata=image_metadata,
     )
     return hw
 
@@ -369,7 +378,11 @@ async def api_teacher_generate_ai_review(request: Request, homework_id: int):
     ocr_document = homework.get("ocr_document")
     if not isinstance(ocr_document, dict) or not ocr_document.get("items"):
         try:
-            ocr_document = await run_in_threadpool(extract_text_document, filepath)
+            ocr_document = await run_in_threadpool(
+                extract_text_document,
+                filepath,
+                homework.get("original_file_path") or homework.get("filename"),
+            )
         except Exception:
             return JSONResponse({"detail": "作业文字识别失败，暂时无法生成错误标注。"}, status_code=422)
         if not ocr_document.get("items"):
@@ -437,9 +450,10 @@ async def api_teacher_grade(request: Request, homework_id: int):
             return JSONResponse({"detail": "错误标注格式无效。"}, status_code=422)
         if item.get("coordinate_space") != "source_pixel":
             return JSONResponse({"detail": "错误标注必须使用原图像素坐标。"}, status_code=422)
+        box = item.get("bbox") or item
         try:
-            x, y = float(item["x"]), float(item["y"])
-            width, height = float(item["width"]), float(item["height"])
+            x, y = float(box["x"]), float(box["y"])
+            width, height = float(box["width"]), float(box["height"])
         except (KeyError, TypeError, ValueError):
             return JSONResponse({"detail": "错误标注坐标无效。"}, status_code=422)
         coordinates = (x, y, width, height)
@@ -447,17 +461,25 @@ async def api_teacher_grade(request: Request, homework_id: int):
             return JSONResponse({"detail": "错误标注坐标无效。"}, status_code=422)
         if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > image_width + 0.01 or y + height > image_height + 0.01:
             return JSONResponse({"detail": "错误标注必须位于作业图片范围内。"}, status_code=422)
-        source_pixel_boxes.append(
-            {
+        annotation = {
+            "bbox": {
                 "x": round(x, 2),
                 "y": round(y, 2),
                 "width": round(width, 2),
                 "height": round(height, 2),
-                "coordinate_space": "source_pixel",
-                "text": str(item.get("text", "")).strip()[:500],
-                "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案",
-            }
-        )
+            },
+            "coordinate_space": "source_pixel",
+            "text": str(item.get("text", "")).strip()[:500],
+            "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案",
+        }
+        deduction = item.get("deduction")
+        if deduction is not None:
+            if isinstance(deduction, bool) or not isinstance(deduction, int) or not 1 <= deduction <= 100:
+                return JSONResponse({"detail": "单项扣分必须是 1 到 100 的整数。"}, status_code=422)
+            annotation["deduction"] = deduction
+        if item.get("ocr_id") is not None:
+            annotation["ocr_id"] = item["ocr_id"]
+        source_pixel_boxes.append(annotation)
 
     hw = finalize_ai_review(homework_id, score, comment.strip()[:2000], source_pixel_boxes, user)
     return hw

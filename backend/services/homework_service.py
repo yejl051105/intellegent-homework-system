@@ -80,17 +80,30 @@ def get_homework(homework_id: int, include_deleted=False, role: str | None = Non
     return None
 
 
-def create_homework(student_id: int, student_name: str, title: str, filename: str, ocr_text: str = ""):
+def create_homework(
+    student_id: int,
+    student_name: str,
+    title: str,
+    filename: str,
+    ocr_document: dict | None = None,
+    image_metadata: dict | None = None,
+):
     items = _read_json(HOMEWORKS_FILE)
     new_id = max((h["id"] for h in items), default=0) + 1
+    ocr_document = ocr_document or {}
+    image_metadata = image_metadata or ocr_document.get("image") or {}
     hw = {
         "id": new_id,
         "student_id": student_id,
         "student_name": student_name,
         "title": title,
         "filename": filename,
-        "ocr_text": ocr_text or "",
-        "ocr_document": None,
+        "ocr_text": "\n".join(item.get("text", "") for item in ocr_document.get("items", [])),
+        "ocr_document": ocr_document or None,
+        "image_metadata": image_metadata,
+        "original_width": image_metadata.get("original_width"),
+        "original_height": image_metadata.get("original_height"),
+        "original_file_path": image_metadata.get("file_path", filename),
         "score": None,
         "comment": "",
         "is_exemplary": False,
@@ -136,7 +149,13 @@ def save_ocr_document(homework_id: int, document: dict):
     for h in items:
         if h["id"] == homework_id:
             h["ocr_document"] = document
-            h["ocr_text"] = "\n".join(item["text"] for item in document.get("items", []))
+            h["ocr_text"] = "\n".join(item.get("text", "") for item in document.get("items", []))
+            image_metadata = document.get("image") or {}
+            if image_metadata:
+                h["image_metadata"] = image_metadata
+                h["original_width"] = image_metadata.get("original_width")
+                h["original_height"] = image_metadata.get("original_height")
+                h["original_file_path"] = image_metadata.get("file_path", h.get("filename", ""))
             _write_json(HOMEWORKS_FILE, items)
             return h
     return None

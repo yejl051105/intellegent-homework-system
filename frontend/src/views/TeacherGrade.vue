@@ -201,6 +201,13 @@ async function confirmReview() {
     requestError.value = '请确认或修改教师评语后再完成批改。'
     return
   }
+  const hasInvalidDeduction = errorBoxes.value.some((item) => (
+    !Number.isInteger(item.deduction) || item.deduction < 1 || item.deduction > 100
+  ))
+  if (hasInvalidDeduction) {
+    requestError.value = '请选中每个错误框，并填写 1 到 100 的整数扣分。'
+    return
+  }
   confirming.value = true
   try {
     const { data } = await api.post(`/teacher/grade/${route.params.id}`, { score: reviewForm.score, comment: reviewForm.comment, error_boxes: errorBoxes.value })

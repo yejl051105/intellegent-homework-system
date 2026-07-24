@@ -1,11 +1,15 @@
 import os
+import posixpath
+import uuid
 from PIL import Image
 
 from paddleocr import PaddleOCR, FormulaRecognition, FormulaRecognitionPipeline
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+ORIGINAL_FOLDER = os.path.join(UPLOAD_FOLDER, "original")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(ORIGINAL_FOLDER, exist_ok=True)
 
 ocr = PaddleOCR(lang="ch", use_textline_orientation=True)
 
@@ -58,58 +62,111 @@ def extract_text(filepath: str) -> str:
     return "\n".join(item["text"] for item in document["items"])
 
 
-def extract_text_document(filepath: str) -> dict:
-    """Return OCR text with the source image's native pixel coordinates."""
+def get_image_metadata(filepath: str, file_path: str | None = None) -> dict:
+    """Read metadata without changing the uploaded source bytes."""
     with Image.open(filepath) as source_image:
         image_width, image_height = source_image.size
+        image_format = (source_image.format or "").lower()
+
+    return {
+        "original_width": image_width,
+        "original_height": image_height,
+        "format": image_format,
+        "file_path": file_path or os.path.relpath(filepath, BASE_DIR).replace(os.sep, "/"),
+    }
+
+
+def adapt_paddleocr_result(result: dict, next_id: int, image_width: int, image_height: int) -> dict | None:
+    """Convert one PaddleOCR result into the application's source-pixel contract."""
+    texts = result.get("rec_texts", [])
+    scores = result.get("rec_scores", [])
+    boxes = result.get("rec_boxes", [])
+    polygons = result.get("dt_polys", result.get("rec_polys", []))
+
+    if next_id >= len(texts):
+        return None
+
+    text = str(texts[next_id]).strip()
+    if not text:
+        return None
+
+    try:
+        x1, y1, x2, y2 = (float(value) for value in boxes[next_id])
+    except (IndexError, TypeError, ValueError):
+        try:
+            polygon = polygons[next_id]
+            x_values = [float(point[0]) for point in polygon]
+            y_values = [float(point[1]) for point in polygon]
+            x1, y1, x2, y2 = min(x_values), min(y_values), max(x_values), max(y_values)
+        except (IndexError, TypeError, ValueError):
+            return None
+
+    x = max(0, min(x1, image_width - 1))
+    y = max(0, min(y1, image_height - 1))
+    width = max(1, min(x2 - x1, image_width - x))
+    height = max(1, min(y2 - y1, image_height - y))
+    try:
+        confidence = round(float(scores[next_id]), 4) if next_id < len(scores) else None
+    except (TypeError, ValueError, OverflowError):
+        confidence = None
+
+    return {
+        "id": next_id + 1,
+        "text": text,
+        "confidence": confidence,
+        "bbox": {
+            "x": round(x, 2),
+            "y": round(y, 2),
+            "width": round(width, 2),
+            "height": round(height, 2),
+        },
+    }
+
+
+def extract_text_document(filepath: str, file_path: str | None = None) -> dict:
+    """Run PaddleOCR on the untouched original image and return source-pixel boxes."""
+    image_metadata = get_image_metadata(filepath, file_path)
+    image_width = image_metadata["original_width"]
+    image_height = image_metadata["original_height"]
 
     items = []
     for result in ocr.predict(filepath):
         texts = result.get("rec_texts", [])
-        boxes = result.get("rec_boxes", [])
-        polygons = result.get("rec_polys", [])
-        scores = result.get("rec_scores", [])
-        for index, raw_text in enumerate(texts):
-            text = str(raw_text).strip()
-            if not text:
-                continue
-
-            try:
-                x1, y1, x2, y2 = (float(value) for value in boxes[index])
-            except (IndexError, TypeError, ValueError):
-                try:
-                    polygon = polygons[index]
-                    x_values = [float(point[0]) for point in polygon]
-                    y_values = [float(point[1]) for point in polygon]
-                    x1, y1, x2, y2 = min(x_values), min(y_values), max(x_values), max(y_values)
-                except (IndexError, TypeError, ValueError):
-                    continue
-
-            items.append(
-                {
-                    "id": f"ocr-{len(items)}",
-                    "text": text,
-                    "score": round(float(scores[index]), 4) if index < len(scores) else None,
-                    "box": {
-                        "x": round(max(0, x1), 2),
-                        "y": round(max(0, y1), 2),
-                        "width": round(max(1, x2 - x1), 2),
-                        "height": round(max(1, y2 - y1), 2),
-                    },
-                }
-            )
+        for index in range(len(texts)):
+            item = adapt_paddleocr_result(result, index, image_width, image_height)
+            if item:
+                item["id"] = len(items) + 1
+                items.append(item)
 
     return {
         "coordinate_space": "source_pixel",
         "image_width": image_width,
         "image_height": image_height,
+        "image": image_metadata,
         "items": items,
     }
 
 
-def save_upload(image, upload_folder: str) -> str:
-    import uuid
+def save_original_upload(filename: str, content: bytes) -> tuple[str, str, dict]:
+    """Persist the exact upload under original/ and return relative path plus metadata."""
+    suffix = os.path.splitext(filename or "image.jpg")[1].lower() or ".jpg"
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}:
+        suffix = ".jpg"
 
+    relative_path = posixpath.join("original", f"{uuid.uuid4().hex}{suffix}")
+    filepath = os.path.join(UPLOAD_FOLDER, *relative_path.split("/"))
+    with open(filepath, "wb") as output:
+        output.write(content)
+    try:
+        metadata = get_image_metadata(filepath, relative_path)
+    except Exception:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        raise
+    return relative_path, filepath, metadata
+
+
+def save_upload(image, upload_folder: str) -> str:
     ext = image.filename.rsplit(".", 1)[-1] if "." in image.filename else "png"
     filename = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(upload_folder, filename)

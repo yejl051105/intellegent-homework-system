@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from backend.services.model_service import _parse_review
+from backend.services.model_service import ModelResponseError, _parse_review
 
 
 class ReviewCoordinateTests(unittest.TestCase):
@@ -12,9 +12,9 @@ class ReviewCoordinateTests(unittest.TestCase):
             "image_height": 800,
             "items": [
                 {
-                    "id": "ocr-0",
+                    "id": 1,
                     "text": "2=1+1",
-                    "box": {"x": 125, "y": 240, "width": 180, "height": 64},
+                    "bbox": {"x": 125, "y": 240, "width": 180, "height": 64},
                 }
             ],
         }
@@ -24,12 +24,11 @@ class ReviewCoordinateTests(unittest.TestCase):
             {
                 "score": 0,
                 "comment": "这道题已经写出计算过程，但结果不符合本次评分标准。请重新核对题目规则，并按规则修正等式结果。",
-                "error_items": [
+                "wrong_answers": [
                     {
-                        "id": "ocr-0",
-                        "text": "模型可以写错这段文本",
-                        "box": {"x": 9999, "y": 9999, "width": 1, "height": 1},
+                        "id": 1,
                         "reason": "计算结果错误",
+                        "deduction": 10,
                     }
                 ],
             },
@@ -42,13 +41,17 @@ class ReviewCoordinateTests(unittest.TestCase):
             review["error_boxes"],
             [
                 {
-                    "x": 125.0,
-                    "y": 240.0,
-                    "width": 180.0,
-                    "height": 64.0,
+                    "ocr_id": 1,
+                    "bbox": {
+                        "x": 119.0,
+                        "y": 234.0,
+                        "width": 192.0,
+                        "height": 76.0,
+                    },
                     "coordinate_space": "source_pixel",
                     "text": "2=1+1",
                     "reason": "计算结果错误",
+                    "deduction": 10,
                 }
             ],
         )
@@ -58,12 +61,11 @@ class ReviewCoordinateTests(unittest.TestCase):
             {
                 "score": 80,
                 "comment": "本次作业的主要步骤已经完成，现有答案表达比较清楚。请继续按照评分标准检查关键结果，避免遗漏必要过程。",
-                "error_items": [
+                "wrong_answers": [
                     {
-                        "id": "invented-id",
-                        "text": "不存在",
-                        "box": {"x": 0, "y": 0, "width": 10, "height": 10},
+                        "id": 999,
                         "reason": "虚构错误",
+                        "deduction": 10,
                     }
                 ],
             },
@@ -73,6 +75,25 @@ class ReviewCoordinateTests(unittest.TestCase):
         review = _parse_review(model_response, self.ocr_document)
 
         self.assertEqual(review["error_boxes"], [])
+
+    def test_review_rejects_invalid_deduction(self):
+        model_response = json.dumps(
+            {
+                "score": 80,
+                "comment": "本次作业的主要步骤已经完成，现有答案表达比较清楚。请继续按照评分标准检查关键结果，避免遗漏必要过程。",
+                "wrong_answers": [
+                    {
+                        "id": 1,
+                        "reason": "计算结果错误",
+                        "deduction": 0,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        with self.assertRaises(ModelResponseError):
+            _parse_review(model_response, self.ocr_document)
 
 
 if __name__ == "__main__":
