@@ -2,15 +2,13 @@
   <div class="homework-detail">
     <div class="page-header">
       <h2>作业详情</h2>
-      <router-link to="/student/dashboard">
-        <el-button><el-icon><arrow-left /></el-icon>返回我的作业</el-button>
-      </router-link>
+      <el-button @click="router.push('/student/dashboard')"><el-icon><arrow-left /></el-icon>返回我的作业</el-button>
     </div>
 
     <el-skeleton :loading="loading" animated :count="2">
       <el-result v-if="error" icon="error" title="无法查看该作业" :sub-title="error">
         <template #extra>
-          <router-link to="/student/dashboard"><el-button type="primary">返回我的作业</el-button></router-link>
+          <el-button type="primary" @click="router.push('/student/dashboard')">返回我的作业</el-button>
         </template>
       </el-result>
 
@@ -27,14 +25,11 @@
             <span><el-icon><calendar /></el-icon>提交于 {{ formatDate(homework.submitted_at) }}</span>
             <span v-if="homework.graded_at"><el-icon><checked /></el-icon>批改于 {{ formatDate(homework.graded_at) }}</span>
           </div>
-          <el-image
+          <HomeworkAnnotationCanvas
             v-if="homework.filename"
             :src="`/uploads/${homework.filename}`"
-            :alt="`${homework.title} 的作业图片`"
-            class="homework-image"
-            fit="contain"
-            :preview-src-list="[`/uploads/${homework.filename}`]"
-            preview-teleported
+            :boxes="homework.error_boxes || []"
+            :alt="`${homework.title} 的作业图片与错误标注`"
           />
         </section>
 
@@ -58,6 +53,7 @@
             <p v-if="homework.comment?.trim()" class="feedback-comment">{{ homework.comment }}</p>
             <p v-else class="feedback-empty">{{ homework.score !== null ? '教师暂未填写文字评语。' : '作业尚未批改，暂时没有评语。' }}</p>
           </el-card>
+
         </aside>
       </div>
     </el-skeleton>
@@ -66,10 +62,12 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
+import HomeworkAnnotationCanvas from '../components/HomeworkAnnotationCanvas.vue'
 
 const route = useRoute()
+const router = useRouter()
 const homework = ref({})
 const loading = ref(true)
 const error = ref('')

@@ -1,3 +1,4 @@
+import math
 import os
 import uuid
 
@@ -12,7 +13,7 @@ from backend.services.model_service import (
     get_model_options,
     get_model_settings,
 )
-from backend.services.ocr_service import BASE_DIR, extract_text
+from backend.services.ocr_service import BASE_DIR, extract_text_document, save_original_upload
 from backend.services.criteria_service import CriteriaExtractionError, extract_criteria_text
 from backend.services.auth_service import authenticate
 from backend.services.permission_service import get_route_permissions
@@ -30,7 +31,8 @@ from backend.services.homework_service import (
     create_exemplary,
     delete_exemplary,
     save_ai_review,
-    update_ocr_text,
+    reset_ai_review,
+    save_ocr_document,
     delete_homework,
     restore_homework,
     permanently_delete_homework,
@@ -135,7 +137,7 @@ async def api_student_homeworks(request: Request):
     user = require_user(request, "student")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    return [student_payload(h) for h in get_homeworks({"student_id": user["id"]})]
+    return [student_payload(h) for h in get_homeworks({"student_id": user["id"]}, role="student")]
 
 
 @router.get("/student/homework/{homework_id}")
@@ -144,7 +146,7 @@ async def api_student_homework(request: Request, homework_id: int):
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
 
-    homework = get_homework(homework_id)
+    homework = get_homework(homework_id, role="student")
     if not homework or homework["student_id"] != user["id"]:
         # Treat another student's work as nonexistent to avoid exposing record ownership.
         return JSONResponse({"detail": "作业不存在"}, status_code=404)
@@ -156,10 +158,10 @@ async def api_student_delete_homework(request: Request, homework_id: int):
     user = require_user(request, "student")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    homework = get_homework(homework_id)
+    homework = get_homework(homework_id, role="student")
     if not homework or homework.get("student_id") != user["id"]:
         return JSONResponse({"detail": "作业不存在"}, status_code=404)
-    delete_homework(homework_id)
+    delete_homework(homework_id, "student")
     return {"ok": True, "homework_id": homework_id}
 
 
@@ -168,7 +170,7 @@ async def api_student_recycle_bin(request: Request):
     user = require_user(request, "student")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    return get_deleted_homeworks({"student_id": user["id"]})
+    return get_deleted_homeworks("student", {"student_id": user["id"]})
 
 
 @router.post("/student/homework/{homework_id}/restore")
@@ -176,10 +178,11 @@ async def api_student_restore_homework(request: Request, homework_id: int):
     user = require_user(request, "student")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    homework = get_homework(homework_id, include_deleted=True)
-    if not homework or homework.get("student_id") != user["id"] or not homework.get("is_deleted"):
+    homework = get_homework(homework_id, include_deleted=True, role="student")
+    if not homework or homework.get("student_id") != user["id"]:
         return JSONResponse({"detail": "回收站中不存在该作业。"}, status_code=404)
-    restore_homework(homework_id)
+    if not restore_homework(homework_id, "student"):
+        return JSONResponse({"detail": "回收站中不存在该作业。"}, status_code=404)
     return {"ok": True, "homework_id": homework_id}
 
 
@@ -188,11 +191,14 @@ async def api_student_permanently_delete_homework(request: Request, homework_id:
     user = require_user(request, "student")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    homework = get_homework(homework_id, include_deleted=True)
-    if not homework or homework.get("student_id") != user["id"] or not homework.get("is_deleted"):
+    homework = get_homework(homework_id, include_deleted=True, role="student")
+    if not homework or homework.get("student_id") != user["id"]:
         return JSONResponse({"detail": "回收站中不存在该作业。"}, status_code=404)
-    permanently_delete_homework(homework_id)
-    remove_homework_files(homework)
+    deleted, fully_removed = permanently_delete_homework(homework_id, "student")
+    if not deleted:
+        return JSONResponse({"detail": "回收站中不存在该作业。"}, status_code=404)
+    if fully_removed:
+        remove_homework_files(deleted)
     return {"ok": True, "homework_id": homework_id}
 
 
@@ -206,18 +212,27 @@ async def api_student_upload(
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
 
-    ext = os.path.splitext(image.filename or "image.jpg")[1] or ".jpg"
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    save_path = os.path.join(UPLOAD_FOLDER, unique_name)
     content = await image.read()
-    with open(save_path, "wb") as f:
-        f.write(content)
+    if not content:
+        return JSONResponse({"detail": "上传文件为空。"}, status_code=422)
+
+    save_path = None
+    try:
+        unique_name, save_path, image_metadata = save_original_upload(image.filename, content)
+        ocr_document = await run_in_threadpool(extract_text_document, save_path, unique_name)
+    except Exception as exc:
+        if save_path and os.path.isfile(save_path):
+            os.remove(save_path)
+        message = "上传图片不是有效的图片文件。" if "cannot identify image" in str(exc).lower() else "原图文字识别失败，请检查图片后重试。"
+        return JSONResponse({"detail": message}, status_code=422)
 
     hw = create_homework(
         student_id=user["id"],
         student_name=user["name"],
         title=title,
         filename=unique_name,
+        ocr_document=ocr_document,
+        image_metadata=image_metadata,
     )
     return hw
 
@@ -248,7 +263,7 @@ async def api_teacher_homeworks(request: Request):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    return get_homeworks()
+    return get_homeworks(role="teacher")
 
 
 @router.post("/teacher/homework/{homework_id}/delete")
@@ -256,7 +271,7 @@ async def api_teacher_delete_homework(request: Request, homework_id: int):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    homework = delete_homework(homework_id)
+    homework = delete_homework(homework_id, "teacher")
     if not homework:
         return JSONResponse({"detail": "作业不存在或已经在回收站。"}, status_code=404)
     return {"ok": True, "homework_id": homework_id}
@@ -267,7 +282,7 @@ async def api_teacher_recycle_bin(request: Request):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    return get_deleted_homeworks()
+    return get_deleted_homeworks("teacher")
 
 
 @router.post("/teacher/homework/{homework_id}/restore")
@@ -275,7 +290,7 @@ async def api_teacher_restore_homework(request: Request, homework_id: int):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    homework = restore_homework(homework_id)
+    homework = restore_homework(homework_id, "teacher")
     if not homework:
         return JSONResponse({"detail": "回收站中不存在该作业。"}, status_code=404)
     return {"ok": True, "homework_id": homework_id}
@@ -286,11 +301,11 @@ async def api_teacher_permanently_delete_homework(request: Request, homework_id:
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    homework = permanently_delete_homework(homework_id)
+    homework, fully_removed = permanently_delete_homework(homework_id, "teacher")
     if not homework:
         return JSONResponse({"detail": "回收站中不存在该作业。"}, status_code=404)
-
-    remove_homework_files(homework)
+    if fully_removed:
+        remove_homework_files(homework)
     return {"ok": True, "homework_id": homework_id}
 
 
@@ -307,7 +322,7 @@ async def api_teacher_homework(request: Request, homework_id: int):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    hw = get_homework(homework_id)
+    hw = get_homework(homework_id, role="teacher")
     if not hw:
         return JSONResponse({"detail": "作业不存在"}, status_code=404)
     return hw
@@ -319,12 +334,9 @@ async def api_teacher_generate_ai_review(request: Request, homework_id: int):
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
 
-    homework = get_homework(homework_id)
+    homework = get_homework(homework_id, role="teacher")
     if not homework:
         return JSONResponse({"detail": "作业不存在"}, status_code=404)
-    if homework.get("review_status") == "confirmed" or homework.get("score") is not None:
-        return JSONResponse({"detail": "该作业已完成复核，不能再次生成 AI 建议。"}, status_code=409)
-
     try:
         body = await request.json()
     except Exception:
@@ -359,31 +371,47 @@ async def api_teacher_generate_ai_review(request: Request, homework_id: int):
         status_code = 422 if model_id not in {"deepseek", "openai", "gemini"} else 503
         return JSONResponse({"detail": str(exc)}, status_code=status_code)
 
-    ocr_text = homework.get("ocr_text", "").strip()
-    if not ocr_text:
-        filepath = os.path.join(UPLOAD_FOLDER, homework.get("filename", ""))
-        if not homework.get("filename") or not os.path.isfile(filepath):
-            return JSONResponse({"detail": "未找到作业图片，无法生成 AI 建议。"}, status_code=404)
+    filepath = os.path.join(UPLOAD_FOLDER, homework.get("filename", ""))
+    if not homework.get("filename") or not os.path.isfile(filepath):
+        return JSONResponse({"detail": "未找到作业图片，无法生成 AI 建议。"}, status_code=404)
+
+    ocr_document = homework.get("ocr_document")
+    if not isinstance(ocr_document, dict) or not ocr_document.get("items"):
         try:
-            ocr_text = await run_in_threadpool(extract_text, filepath)
+            ocr_document = await run_in_threadpool(
+                extract_text_document,
+                filepath,
+                homework.get("original_file_path") or homework.get("filename"),
+            )
         except Exception:
-            return JSONResponse({"detail": "作业文字识别失败，暂时无法交给模型评分。"}, status_code=422)
-        if not ocr_text:
-            return JSONResponse({"detail": "未识别到可供评分的作业文本，请检查上传图片。"}, status_code=422)
-        update_ocr_text(homework_id, ocr_text)
+            return JSONResponse({"detail": "作业文字识别失败，暂时无法生成错误标注。"}, status_code=422)
+        if not ocr_document.get("items"):
+            return JSONResponse({"detail": "未识别到可供定位的作业文字，请检查上传图片。"}, status_code=422)
+        save_ocr_document(homework_id, ocr_document)
 
     criteria_text = f"【{criterion['title']}】\n{criteria_content}"
     try:
         review = await generate_homework_review(
             settings,
             homework["title"],
-            ocr_text,
             criteria_text,
+            ocr_document,
         )
     except ModelResponseError as exc:
         return JSONResponse({"detail": str(exc)}, status_code=502)
 
     return save_ai_review(homework_id, review, f"{settings.label} · {settings.model}", criterion)
+
+
+@router.post("/teacher/homework/{homework_id}/reset-review")
+async def api_teacher_reset_ai_review(request: Request, homework_id: int):
+    user = require_user(request, "teacher")
+    if not user:
+        return JSONResponse({"detail": "未登录"}, status_code=401)
+    homework = get_homework(homework_id, role="teacher")
+    if not homework:
+        return JSONResponse({"detail": "作业不存在"}, status_code=404)
+    return reset_ai_review(homework_id)
 
 
 @router.post("/teacher/grade/{homework_id}")
@@ -392,7 +420,7 @@ async def api_teacher_grade(request: Request, homework_id: int):
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
     body = await request.json()
-    homework = get_homework(homework_id)
+    homework = get_homework(homework_id, role="teacher")
     if not homework:
         return JSONResponse({"detail": "作业不存在"}, status_code=404)
     if homework.get("review_status") != "ai_suggested" or homework.get("ai_score") is None:
@@ -404,8 +432,56 @@ async def api_teacher_grade(request: Request, homework_id: int):
         return JSONResponse({"detail": "分数必须是 0 到 100 的整数。"}, status_code=422)
     if not isinstance(comment, str) or not comment.strip():
         return JSONResponse({"detail": "请填写教师评语后再完成复核。"}, status_code=422)
+    error_boxes = body.get("error_boxes", [])
+    if not isinstance(error_boxes, list) or len(error_boxes) > 12:
+        return JSONResponse({"detail": "错误标注最多 12 个，且必须是矩形数组。"}, status_code=422)
+    ocr_document = homework.get("ocr_document") or {}
+    try:
+        image_width = float(ocr_document["image_width"])
+        image_height = float(ocr_document["image_height"])
+    except (KeyError, TypeError, ValueError):
+        return JSONResponse({"detail": "OCR 缺少原图尺寸，无法校验错误标注。"}, status_code=422)
+    if not all(math.isfinite(value) and value > 0 for value in (image_width, image_height)):
+        return JSONResponse({"detail": "OCR 原图尺寸无效，无法校验错误标注。"}, status_code=422)
 
-    hw = finalize_ai_review(homework_id, score, comment.strip()[:2000], user)
+    source_pixel_boxes = []
+    for item in error_boxes:
+        if not isinstance(item, dict):
+            return JSONResponse({"detail": "错误标注格式无效。"}, status_code=422)
+        if item.get("coordinate_space") != "source_pixel":
+            return JSONResponse({"detail": "错误标注必须使用原图像素坐标。"}, status_code=422)
+        box = item.get("bbox") or item
+        try:
+            x, y = float(box["x"]), float(box["y"])
+            width, height = float(box["width"]), float(box["height"])
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse({"detail": "错误标注坐标无效。"}, status_code=422)
+        coordinates = (x, y, width, height)
+        if not all(math.isfinite(value) for value in coordinates):
+            return JSONResponse({"detail": "错误标注坐标无效。"}, status_code=422)
+        if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > image_width + 0.01 or y + height > image_height + 0.01:
+            return JSONResponse({"detail": "错误标注必须位于作业图片范围内。"}, status_code=422)
+        annotation = {
+            "bbox": {
+                "x": round(x, 2),
+                "y": round(y, 2),
+                "width": round(width, 2),
+                "height": round(height, 2),
+            },
+            "coordinate_space": "source_pixel",
+            "text": str(item.get("text", "")).strip()[:500],
+            "reason": str(item.get("reason", "错误答案")).strip()[:160] or "错误答案",
+        }
+        deduction = item.get("deduction")
+        if deduction is not None:
+            if isinstance(deduction, bool) or not isinstance(deduction, int) or not 1 <= deduction <= 100:
+                return JSONResponse({"detail": "单项扣分必须是 1 到 100 的整数。"}, status_code=422)
+            annotation["deduction"] = deduction
+        if item.get("ocr_id") is not None:
+            annotation["ocr_id"] = item["ocr_id"]
+        source_pixel_boxes.append(annotation)
+
+    hw = finalize_ai_review(homework_id, score, comment.strip()[:2000], source_pixel_boxes, user)
     return hw
 
 
@@ -475,7 +551,7 @@ async def api_teacher_exemplary_list(request: Request):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    hw_list = [exemplary_payload(h) for h in get_homeworks() if h.get("is_exemplary")]
+    hw_list = [exemplary_payload(h) for h in get_homeworks(role="teacher") if h.get("is_exemplary")]
     return {"homeworks": hw_list}
 
 
@@ -484,7 +560,7 @@ async def api_teacher_exemplary_detail(request: Request, homework_id: int):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    homework = get_homework(homework_id)
+    homework = get_homework(homework_id, role="teacher")
     if not homework or not homework.get("is_exemplary"):
         return JSONResponse({"detail": "优秀作业不存在"}, status_code=404)
     return exemplary_payload(homework)
@@ -526,7 +602,7 @@ async def api_teacher_exemplary(request: Request, homework_id: int):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    hw = get_homework(homework_id)
+    hw = get_homework(homework_id, role="teacher")
     if not hw:
         return JSONResponse({"detail": "作业不存在"}, status_code=404)
     # Copy file to create a standalone exemplary entry
@@ -549,7 +625,7 @@ async def api_teacher_unexemplary(request: Request, homework_id: int):
     user = require_user(request, "teacher")
     if not user:
         return JSONResponse({"detail": "未登录"}, status_code=401)
-    hw = get_homework(homework_id)
+    hw = get_homework(homework_id, role="teacher")
     if not hw:
         return JSONResponse({"detail": "作业不存在"}, status_code=404)
     # Remove the standalone exemplary entry if it exists
