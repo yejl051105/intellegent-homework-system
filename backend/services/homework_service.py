@@ -56,6 +56,7 @@ def create_homework(student_id: int, student_name: str, title: str, filename: st
         "title": title,
         "filename": filename,
         "ocr_text": ocr_text or "",
+        "ocr_document": None,
         "score": None,
         "comment": "",
         "is_exemplary": False,
@@ -92,11 +93,12 @@ def grade_homework(homework_id: int, score: int, comment: str):
     return None
 
 
-def update_ocr_text(homework_id: int, ocr_text: str):
+def save_ocr_document(homework_id: int, document: dict):
     items = _read_json(HOMEWORKS_FILE)
     for h in items:
         if h["id"] == homework_id:
-            h["ocr_text"] = ocr_text
+            h["ocr_document"] = document
+            h["ocr_text"] = "\n".join(item["text"] for item in document.get("items", []))
             _write_json(HOMEWORKS_FILE, items)
             return h
     return None

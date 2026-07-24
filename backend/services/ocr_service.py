@@ -54,11 +54,52 @@ def ocr_region(img_pil: Image.Image, filepath: str) -> str:
 
 def extract_text(filepath: str) -> str:
     """Extract the text that will be supplied to the review model."""
-    result = ocr.predict(filepath)
-    lines = []
-    for item in result:
-        lines.extend(item.get("rec_texts", []))
-    return "\n".join(line.strip() for line in lines if line.strip())
+    document = extract_text_document(filepath)
+    return "\n".join(item["text"] for item in document["items"])
+
+
+def extract_text_document(filepath: str) -> dict:
+    """Return OCR text with the source image's native pixel coordinates."""
+    with Image.open(filepath) as source_image:
+        image_width, image_height = source_image.size
+
+    items = []
+    for result in ocr.predict(filepath):
+        texts = result.get("rec_texts", [])
+        boxes = result.get("rec_boxes", [])
+        polygons = result.get("rec_polys", [])
+        scores = result.get("rec_scores", [])
+        for index, raw_text in enumerate(texts):
+            text = str(raw_text).strip()
+            if not text:
+                continue
+
+            try:
+                x1, y1, x2, y2 = (float(value) for value in boxes[index])
+            except (IndexError, TypeError, ValueError):
+                try:
+                    polygon = polygons[index]
+                    x_values = [float(point[0]) for point in polygon]
+                    y_values = [float(point[1]) for point in polygon]
+                    x1, y1, x2, y2 = min(x_values), min(y_values), max(x_values), max(y_values)
+                except (IndexError, TypeError, ValueError):
+                    continue
+
+            items.append(
+                {
+                    "id": f"ocr-{len(items)}",
+                    "text": text,
+                    "score": round(float(scores[index]), 4) if index < len(scores) else None,
+                    "box": {
+                        "x": round(max(0, x1), 2),
+                        "y": round(max(0, y1), 2),
+                        "width": round(max(1, x2 - x1), 2),
+                        "height": round(max(1, y2 - y1), 2),
+                    },
+                }
+            )
+
+    return {"image_width": image_width, "image_height": image_height, "items": items}
 
 
 def save_upload(image, upload_folder: str) -> str:

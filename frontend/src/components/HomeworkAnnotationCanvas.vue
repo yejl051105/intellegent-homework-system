@@ -1,7 +1,11 @@
 <template>
   <div ref="stageRef" class="annotation-stage" :class="{ 'annotation-stage--editable': editable }">
+    <el-button class="annotation-zoom" circle title="放大查看原图" aria-label="放大查看原图" @click="previewVisible = true">
+      <el-icon><zoom-in /></el-icon>
+    </el-button>
     <canvas ref="canvasRef" :aria-label="alt"></canvas>
   </div>
+  <el-image-viewer v-if="previewVisible" :url-list="[src]" @close="previewVisible = false" />
 </template>
 
 <script setup>
@@ -18,6 +22,7 @@ const props = defineProps({
 const emit = defineEmits(['update:boxes'])
 const stageRef = ref(null)
 const canvasRef = ref(null)
+const previewVisible = ref(false)
 let canvas = null
 let image = null
 let resizeObserver = null
@@ -110,8 +115,8 @@ async function initializeCanvas() {
     const loadedImage = await FabricImage.fromURL(props.src, { crossOrigin: 'anonymous' })
     if (version !== renderVersion || !canvas) return
     image = loadedImage
-    const availableWidth = Math.max(280, Math.min(stageRef.value.clientWidth || 760, 920))
-    const scale = availableWidth / image.width
+    const availableWidth = stageRef.value.clientWidth || image.width
+    const scale = Math.min(1, availableWidth / image.width)
     const height = Math.round(image.height * scale)
     canvas.setDimensions({ width: Math.round(availableWidth), height })
     image.set({ left: 0, top: 0, selectable: false, evented: false, scaleX: scale, scaleY: scale })
@@ -150,9 +155,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .annotation-stage {
+  position: relative;
   width: 100%;
-  min-height: 260px;
-  overflow: auto;
+  overflow: hidden;
   background: #f7faf9;
   border: 1px solid #dbe7e2;
   border-radius: 6px;
@@ -160,4 +165,17 @@ onBeforeUnmount(() => {
 
 .annotation-stage--editable :deep(.upper-canvas) { cursor: move; }
 .annotation-stage :deep(.canvas-container) { margin: 0 auto; }
+.annotation-zoom.el-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  color: #164f4d;
+  background: rgba(255, 255, 255, .92);
+  border-color: #dbe7e2;
+  box-shadow: 0 3px 12px rgba(20, 67, 65, .16);
+}
 </style>

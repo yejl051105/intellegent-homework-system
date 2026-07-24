@@ -12,7 +12,7 @@ from backend.services.model_service import (
     get_model_options,
     get_model_settings,
 )
-from backend.services.ocr_service import BASE_DIR, extract_text
+from backend.services.ocr_service import BASE_DIR, extract_text_document
 from backend.services.criteria_service import CriteriaExtractionError, extract_criteria_text
 from backend.services.auth_service import authenticate
 from backend.services.permission_service import get_route_permissions
@@ -30,7 +30,7 @@ from backend.services.homework_service import (
     create_exemplary,
     delete_exemplary,
     save_ai_review,
-    update_ocr_text,
+    save_ocr_document,
     delete_homework,
     restore_homework,
     permanently_delete_homework,
@@ -363,24 +363,23 @@ async def api_teacher_generate_ai_review(request: Request, homework_id: int):
     if not homework.get("filename") or not os.path.isfile(filepath):
         return JSONResponse({"detail": "未找到作业图片，无法生成 AI 建议。"}, status_code=404)
 
-    ocr_text = homework.get("ocr_text", "").strip()
-    if not ocr_text:
+    ocr_document = homework.get("ocr_document")
+    if not isinstance(ocr_document, dict) or not ocr_document.get("items"):
         try:
-            ocr_text = await run_in_threadpool(extract_text, filepath)
+            ocr_document = await run_in_threadpool(extract_text_document, filepath)
         except Exception:
-            return JSONResponse({"detail": "作业文字识别失败，暂时无法交给模型评分。"}, status_code=422)
-        if not ocr_text:
-            return JSONResponse({"detail": "未识别到可供评分的作业文本，请检查上传图片。"}, status_code=422)
-        update_ocr_text(homework_id, ocr_text)
+            return JSONResponse({"detail": "作业文字识别失败，暂时无法生成错误标注。"}, status_code=422)
+        if not ocr_document.get("items"):
+            return JSONResponse({"detail": "未识别到可供定位的作业文字，请检查上传图片。"}, status_code=422)
+        save_ocr_document(homework_id, ocr_document)
 
     criteria_text = f"【{criterion['title']}】\n{criteria_content}"
     try:
         review = await generate_homework_review(
             settings,
             homework["title"],
-            ocr_text,
             criteria_text,
-            filepath,
+            ocr_document,
         )
     except ModelResponseError as exc:
         return JSONResponse({"detail": str(exc)}, status_code=502)
