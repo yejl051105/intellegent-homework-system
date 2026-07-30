@@ -1,3 +1,4 @@
+// 前端入口：挂载 Vue 应用，注册 Element Plus 与全部图标组件
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
